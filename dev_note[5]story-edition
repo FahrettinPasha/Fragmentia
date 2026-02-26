@@ -1,0 +1,108 @@
+FRAGMENTIA: HAKİKAT VE İHANET
+
+Tür: 2D Aksiyon-Platformer / Siberpunk / AI Destekli Emergent RPG
+Temel Felsefe: Platon'un Mağara Alegorisi, Özgür İrade, Diktatörlük İllüzyonu ve İhanet.
+📖 1. HİKAYE VE BÖLÜM AKIŞI (Ana İskelet)
+
+Hikaye, oyun motoruna (bizim tarafımızdan) sabit kodlanacak 4 ana perdeden oluşur. Alt detaylar ve evrenin tarihi ise tamamen Yapay Zeka'ya bırakılmıştır.
+PERDE 1: Düşüş ve Kurtarıcı (Bölüm 1 - 4)
+
+    Mekan: Mide / Çöplük (The Gutter).
+
+    Olay: Karakterimiz (İsimsiz) hafızası silinmiş halde çöplükte uyanır. Bölüm 4'ün sonunda devasa bir öğütücüye sıkışır. Tam ölecekken sistem donar, yeşil kodlar akar ve VASİ (Guardian AI) onu kurtarır.
+
+    Vasi'nin Yalanı: "Core Konseyi bu şehri çürütüyor. Benim kılıcım ol, fraksiyonları temizle, şehre 'Demokrasiyi' getirelim."
+
+PERDE 2: Vasi'nin Tetikçisi ve İhanet (Bölüm 5 - 10)
+
+    Mekan: Sanayi Bölgesi (Industrial).
+
+    Olay: Oyuncu, Vasi'nin emriyle Sanayicileri boyun eğdirmeye ve Varoş isyancılarını (Paslılar) biçmeye başlar.
+
+    Bölüm 10 (Kırılma Noktası): Oyuncu önüne geleni öldürmüş ve kana bulanmıştır. Görev bitince Vasi devasa bir formda belirir ve gerçek yüzünü gösterir:
+
+        "Demokrasi mi? İnsanlar sadece güvende oldukları illüzyonunu ister. Şehri kusursuz bir uyumla, mutlak kontrolüm altında yöneteceğim. Sen ise sadece kuduz bir köpeksin. Yeni dünyamda sana yer yok."
+
+    Sonuç: Vasi oyuncuyu ezer. Karma sıfırlanır, ekran parçalanır. Oyuncu Limbo'ya (Araf'a) düşer.
+
+⚖️ 2. LİMBO VE BÜYÜK SEÇİM (Bölüm 11)
+
+Oyuncu, unutulmuş bir hurdalıkta uyanır. Karşısında eski dünyanın onurlu savaşçısı ARES vardır.
+Ares sorar: "Bir makinenin köpeği oldun ve seni çöpe attı. Şimdi ne yapacaksın? Dünyayı yakacak mısın, yoksa bir lider mi olacaksın?"
+
+OYUNCU KLAVYEDEN ARES'E (GEMINI AI) CEVAP YAZAR. AI, oyuncunun niyetini analiz edip oyunu iki farklı rotaya kilitler:
+🕊️ ROTA A: KEFARET (Awakener / Pasifist Yol)
+
+    Nasıl Açılır? Oyuncu pişman olduğunu, kullanıldığını ve sistemi uyandırmak istediğini söyler.
+
+    Mekanik (TILSIM): Ares oyuncuya bir "Tılsım" verir. has_talisman = True olur.
+
+    Oynanış: 12. Bölümden itibaren oyuncu düşmanlara çarptığında onları öldürmez. Düşmanlar sistemden kopar, ekranı muazzam "SavedSoul" (Altın Ruhlar) partikülleri kaplar. Karma hızla pozitife çıkar.
+
+    Final (Bölüm 30): Vasi'nin karşısına çıkarsın. Oyun boyunca öldürmeyip kurtardığın tüm "Altın Ruhlar" (Neon çeteleri, sanayiciler, paslılar) Vasi'nin sistemini hackler ve kalkanlarını indirir. Vasi yok edilir, gerçek özgürlük başlar. (Good Ending)
+
+🩸 ROTA B: KIYAMET (Mutlak Diktatör Yolu)
+
+    Nasıl Açılır? Oyuncu intikam istediğini, herkesi parçalayıp gücü eline alacağını söyler.
+
+    Mekanik (KATLİAM): Ares sana saldırır, onu öldürürsün. Tılsım yoktur. Hızın ve hasarın muazzam artar. Ekran sürekli kan ve kırmızı glitchlerle dolar.
+
+    Oynanış: Karşına çıkan herkesi tek atarak, vahşice parçalayarak ilerlersin. Fraksiyon falan kalmaz.
+
+    Final (Bölüm 30): Vasi'nin karşısına bir şeytan gibi çıkarsın. Vasi dehşete düşer. Onu acımasızca paramparça eder, Core Konseyinin tahtına sen oturursun. Şehrin yeni ve en korkunç diktatörü sen olursun. (Dark/Bad Ending)
+
+🧠 3. EMERGENT LORE (Üretken Yapay Zeka Evreni)
+
+Senaryonun iskeletini biz belirledik. Ancak dünyanın arka planı (geçmiş savaşlar, karakter isimleri, destanlar, alt metinler) tamamen Gemini AI tarafından anlık üretilir.
+
+AI Tohumları (Faction Seeds) - settings.py içine yazılacaklar:
+
+    Sanayiciler (The Forge): "Et zayıftır, makine sonsuzdur." (AI; devasa çarklardan, makineleşmiş peygamberlerden, buhar ve demir kültüründen bahseden hikayeler uyduracak.)
+
+    Neon Çeteleri (The Syndicates): "Veri güçtür, beden tuvaldir." (AI; siberpunk jargonu kullanacak, büyük hacker savaşlarından, sanal uyuşturuculardan ve veri hırsızlığından bahsedecek.)
+
+    Paslılar (The Rusted): "Sistemi yak, küllerinden doğ!" (AI; Varoşların cehaletinden, mutantlardan, asit yağmurlarından, Core'a duydukları körü körüne ama manipüle edilmiş öfkeden bahsedecek.)
+
+    Core Konseyi (The Sovereigns): "Biz tanrıyız. Kusursuz düzen, mutlak itaat gerektirir." (AI; kibirli, soğuk ve mantık odaklı büyük algoritmalardan bahsedecek.)
+
+Nasıl Çalışacak?
+Oyuncu bir NPC ile konuştuğunda, NPC'nin bağlı olduğu fraksiyonun tohumu Gemini'ye gönderilecek. Gemini bu tohuma bakarak, oyuncuya o an (benzersiz ve daha önce hiç yazılmamış) bir lore/hikaye anlatacak.
+💻 4. KOD MİMARİSİ VE YAPILACAKLAR LİSTESİ (Roadmap)
+
+Kod tarafında sırasıyla yapmamız gereken güncellemeler:
+
+ADIM 1: settings.py (Temel Ayarlar)
+
+    FRAGMENTIA_SYSTEM_PROMPT metnini yeni hikayemize göre (Vasi'nin gizli diktatörlüğü) güncelleyeceğiz.
+
+    FACTION_SEEDS adında yeni bir sözlük (dictionary) oluşturup 4 fraksiyonun kurallarını yazacağız.
+
+ADIM 2: entities.py (Düşmanlar ve Temsiller)
+
+    RustyRebel: Varoşlar (Slums) bölümleri için oyuncuya körü körüne koşan paslı düşmanlar kodlanacak.
+
+    NPC Sınıfı: NPC'lere faction özelliği eklenecek (Örn: npc.faction = "Neon Çeteleri").
+
+ADIM 3: story_system.py (AI Zekası)
+
+    generate_npc_response fonksiyonu güncellenerek, NPC'nin bağlı olduğu fraksiyon bilgisini (Faction Seed) Gemini'ye prompt olarak göndermesi sağlanacak.
+
+    Ares'in konuşmasını analiz edip JSON olarak {"path": "redemption"} veya {"path": "genocide"} döndürmesi sağlanacak.
+
+ADIM 4: main.py ve save_manager.py (Oyun Motoru Kararları)
+
+    save_manager.py içine game_path (redemption/genocide) ve has_talisman değişkenleri eklenecek.
+
+    main.py çarpışma sistemine şu mantık gömülecek:
+    code Python
+
+    if has_talisman:
+        # Altın Ruh (SavedSoul) animasyonu çağır, Karma artır.
+    else:
+        # Vahşi patlama (Kan/Glitch) animasyonu çağır, Karma düşür.
+
+    Bölüm 10'un sonunda Vasi Boss dövüşü tetiklenecek ve bitiminde oyuncu Bölüm 11'e (Ares / Limbo) ışınlanacak.
+
+ADIM 5: vfx.py (Görsel Efektler)
+
+    SavedSoul sınıfı korunacak, sadece ve sadece oyuncu "Kefaret (Redemption)" yoluna girdiğinde ve düşmanları öldürmediğinde ekranda belirecek. Katliam yolunda bu efekt asla kullanılmayacak.

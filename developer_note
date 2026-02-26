@@ -1,0 +1,171 @@
+Level Complete Pipeline
+LEVEL COMPLETE
+      ↓
+Collect Player Data
+      ↓
+Generate Behavioral Summary
+      ↓
+Send To AI
+      ↓
+Receive World Mutation JSON
+      ↓
+Apply Mutations To Next Level
+      ↓
+Start Next Level
+
+
+AI her frame çalışmaz.
+Sadece level geçişinde çalışır.
+Bu hem performanslı hem kontrollü.
+
+1️⃣ LEVEL DATA COLLECTOR (Yeni Modül)
+
+Yeni dosya öneriyorum:
+
+level_analytics.py
+
+
+Burada bölüm boyunca veri toplarsın.
+
+Örnek veri:
+
+level_stats = {
+    "level_index": 1,
+    "score": score,
+    "deaths": death_count,
+    "enemies_killed": enemies_killed,
+    "enemies_spared": enemies_spared,
+    "dash_count": dash_used,
+    "slam_count": slam_used,
+    "avg_jump_gap_failed": avg_failed_gap,
+    "time_spent": level_time,
+    "karma_change": karma_delta
+}
+
+
+Bu veri bölüm boyunca güncellenir.
+
+2️⃣ AI PROMPT GENERATION
+
+Level bittiğinde:
+
+def build_ai_prompt(level_stats):
+    return f"""
+    PLAYER LEVEL REPORT:
+
+    Level: {level_stats['level_index']}
+    Score: {level_stats['score']}
+    Deaths: {level_stats['deaths']}
+    Enemies killed: {level_stats['enemies_killed']}
+    Enemies spared: {level_stats['enemies_spared']}
+    Dash usage: {level_stats['dash_count']}
+    Slam usage: {level_stats['slam_count']}
+    Time spent: {level_stats['time_spent']}
+    Karma change: {level_stats['karma_change']}
+
+    Based on this behavior:
+    - Adjust next level difficulty
+    - Modify enemy aggression
+    - Modify platform spacing
+    - Possibly trigger story mutation
+
+    Return ONLY JSON with parameters.
+    """
+
+3️⃣ AI JSON FORMAT (Kontrollü Olmalı)
+
+AI’ya net sınır koy:
+
+{
+  "difficulty_multiplier": 1.2,
+  "enemy_spawn_rate": 1.5,
+  "platform_gap_max": 220,
+  "gravity_multiplier": 1.0,
+  "boss_aggression": 0.8,
+  "story_tone": "hostile"
+}
+
+
+⚠️ AI’ya serbest bırakma.
+Sadece izin verilen parametreleri değiştirebilsin.
+
+4️⃣ WORLD MUTATION ENGINE
+
+Yeni dosya öneriyorum:
+
+world_mutator.py
+
+def apply_mutations(mutation_json):
+    settings.GRAVITY *= mutation_json["gravity_multiplier"]
+    settings.GAP_MAX = mutation_json["platform_gap_max"]
+    settings.ENEMY_SPAWN_RATE *= mutation_json["enemy_spawn_rate"]
+
+
+Sonraki level init edilirken bu değerler kullanılır.
+
+5️⃣ AI CALL NON-BLOCKING (Çok Önemli)
+
+Level bitince loading ekranı koy:
+
+"Analyzing your actions..."
+
+
+AI call thread içinde:
+
+import threading
+
+def analyze_level():
+    response = model.generate_content(prompt)
+    process_response(response)
+
+threading.Thread(target=analyze_level).start()
+
+
+Bu sırada loading animasyonu oynar.
+
+6️⃣ Persistent AI Memory (Asıl Güç Burada)
+
+Her level raporunu kaydet:
+
+ai_memory.json
+
+
+Örnek:
+
+{
+  "level_history": [
+    { level 1 stats },
+    { level 2 stats }
+  ],
+  "player_profile": {
+    "aggression": 0.75,
+    "skill": 0.62,
+    "morality_trend": -120
+  }
+}
+
+
+Sonraki prompt’a şunu da eklersin:
+
+Previous behavior trend:
+Aggression: 0.75
+Skill: 0.62
+Morality trend: Negative
+
+
+İşte o zaman AI gerçekten “oyuncuyu tanıyor” olur.
+
+⚠️ KRİTİK GÜVENLİK
+
+AI’dan gelen her değeri clamp et:
+
+def safe_clamp(value, min_val, max_val):
+    return max(min_val, min(value, max_val))
+
+
+Örneğin:
+
+gravity = safe_clamp(json["gravity_multiplier"], 0.5, 1.5)
+
+
+Yoksa AI 10 yazarsa oyun bozulur.

@@ -1,0 +1,218 @@
+PROJE MİMARİSİ: NEXUS MASTER SYSTEM
+
+Temel Felsefe: Oyun dünyası statik bir dekor değildir. Oyuncu bir "Virüs/Anomali", oyunun kendisi (AI) ise bu virüsü analiz eden, bazen onu kullanmaya çalışan, bazen de yok etmeye çalışan bir **"Bağışıklık Sistemi"**dir.
+
+Bu sistem 6 Ana Modül ve 1 Döngüden oluşur.
+🧠 MODÜL 1: BEYİN (AI Game Master)
+
+Dosya: ai_game_master.py
+
+Bu modül oyunun Yönetmenidir. Google Gemini API ile konuşan tek merkezdir. Rastgele sayı üretmez, "Niyet" (Intent) üretir.
+
+    Görevi:
+
+        Level sonlarında level_analytics'ten gelen raporu okur.
+
+        Oyuncunun profilini çıkarır (Örn: "Agresif ama dikkatsiz", "Zengin ama korkak").
+
+        Buna göre bir sonraki bölümün kurallarını belirleyen bir JSON çıktısı üretir.
+
+    Asenkron Yapı: Oyun akarken arka planda (Threading) düşünür, oyuncuyu bekletmez (Loading ekranında çalışır).
+
+    Güvenlik: AI'ın ürettiği değerler (örn: yerçekimi 500x) oyunu bozmasın diye clamp fonksiyonlarıyla sınırlandırılır.
+
+👁️ MODÜL 2: GÖZLEMCİ (Level Analytics)
+
+Dosya: level_analytics.py
+
+Bu modül, oyuncuyu bir laboratuvar faresi gibi izler. Sadece "Skor" tutmaz, "Davranış" tutar.
+
+    Takip Edilen Metrikler:
+
+        Combat: Öldürme hızı, tercih edilen saldırı (Dash mi, Slam mi?), merhamet oranı (Saved Soul).
+
+        Hareket: Duraklama süreleri (Tereddüt mü ediyor?), düşme sıklığı.
+
+        Ekonomi: Parayı harcıyor mu, istifliyor mu?
+
+    Çıktı: Bu veriler ham halde değil, özetlenerek AI'ya "Oyuncu Raporu" olarak sunulur.
+
+🌍 MODÜL 3: FİZİKSEL MUTASYON (World Mutator & Dynamic Entities)
+
+Dosya: world_mutator.py & dynamic_entities.py
+
+AI'ın emirlerini fiziksel dünyaya uygulayan "Eller"dir.
+
+    Fiziksel Değişimler:
+
+        Oyuncu çok hızlıysa -> Yerçekimini artırır, platform aralarını açar.
+
+        Oyuncu çok yavaşsa -> Arkadan gelen bir "Sistem Temizlik Dalgası" (Lazer duvarı) ekler.
+
+    Düşman Adaptasyonu (Dynamic Spawning):
+
+        Rastgele düşman yoktur.
+
+        Oyuncu havada çok kalıyorsa -> Uçan Drone'lar (Anti-Air) spawn olur.
+
+        Oyuncu yerde çok kalıyorsa -> Tanklar ve Mayınlar spawn olur.
+
+
+
+⚖️ MODÜL 4: POLİTİKA (Faction System)
+
+Dosya: faction_system.py
+
+Dünyadaki 3 büyük güç odağı arasındaki denge.
+
+    Hizipler:
+
+        NEXUS: Sistem koruyucuları. (Düzen)
+
+        GUTTER: Sistem hataları ve hackerlar. (Kaos)
+
+        VOID: Mistikler ve filozoflar. (Denge)
+
+    İtibar Sarkaçı: Birine yardım etmek, diğerini düşman yapar.
+
+        Örn: NEXUS'a yardım edersen, GUTTER marketinde fiyatlar 2 katına çıkar veya sana mal satmazlar.
+
+🎭 MODÜL 6: PSİKOLOJİ & "THE UNKNOWN ANOMALY"
+
+Dosya: npc_psychology.py & story_system.py
+
+Burası işin en "tekinsiz" kısmı. Oyuncu bir kahraman değil, tanımlanamayan bir **"Hata Kodu"**dur.
+
+    NPC Hafızası: Her NPC'nin Trust (Güven) ve Fear (Korku) parametresi vardır.
+
+        Oyuncu katliam yaparsa -> Fear artar (NPC kekeler, indirim yapar).
+
+        Oyuncu sessiz kalırsa -> Trust düşer (NPC şüphelenir, bilgi vermez).
+
+    Dinamik Diyaloglar: AI'ya gönderilen prompt şöyledir: "Sen bir NPC'sin. Karşındaki oyuncu bir İnsan değil, bir Glitch. Onu anlamıyorsun ve bu seni korkutuyor. Buna göre davran."
+
+    Sosyal Baskı: Güven seviyesi çok düşükse, NPC'ler oyuncuyu güvenliğe ihbar edebilir veya yanlış yola yönlendirebilir.
+
+🔄 BÜYÜK OYUN DÖNGÜSÜ (THE LOOP)
+
+Oyun şu akışta çalışır:
+
+    LOBİ (SAFE ZONE):
+
+        Oyuncu NPC'lerle konuşur (NPC'ler önceki bölümdeki başarını/vahşetini hatırlar).
+
+        Haberleri okur (AI: "Borsa çöktü, NEXUS alarmda!").
+
+        Marketi kullanır (Enflasyonlu fiyatlarla).
+
+    AKSİYON (LEVEL):
+
+        Bölüm, AI'ın belirlediği zorluk ve düşman tipleriyle başlar.
+
+        LevelAnalytics veriyi toplar.
+
+    YARGILAMA (LOADING SCREEN):
+
+        Bölüm biter. Veriler AIGameMaster'a gider.
+
+        AI analiz eder: "Oyuncu çok zengin ve agresif. Enflasyonu %20 artır, düşman hızını 1.5x yap, NPC'leri korkut."
+
+        AI, bir JSON çıktısı üretir.
+
+    MUTASYON (NEXT LEVEL):
+şte Neon Town'u üçe bölen, tamamen illegal 3 BÜYÜK KARTEL:
+1. KROM KARTELİ (Silah, Haraç ve Şiddet Ağı)
+
+    Tamamen İllegal İşleri: Karaborsa silah kaçakçılığı, haraç kesme, yasadışı siber-implant takma (merdiven altı klinikler) ve kiralık katil sendikası.
+
+    Yapıları: Klasik mafyanın siberpunk versiyonu. Şehrin sokak çetelerini kendilerine bağlamışlar. Borcunu ödemeyenin siber-kollarını söküp satarlar.
+
+    Neon Renkleri (Oyundaki Düşman Görünümü): Sarı ve Saf Siyah. (Oyunda sarı mermiler atarlar, zırhları siyah ağırlıklıdır).
+
+    Oyun İçi Özellikleri: Düşman tipleri biraz daha agresiftir, üzerine doğru koşmayı severler.
+
+2. SENTEZCİLER (Uyuşturucu, Kumar ve Zevk Ağı)
+
+    Tamamen İllegal İşleri: Yasadışı sanal gerçeklik (VR) uyuşturucuları ("Nöro-Toz"), illegal siber-kumarhaneler ve insanların zihinlerini kiraladıkları merdiven altı zevk evleri.
+
+    Yapıları: Tamamen yozlaşmış, eğlence ve bağımlılık üzerinden milyarlar kazanan bir suç örgütü. Şehrin her tarafına bağımlılık yapan çipler satıyorlar. Kendi üyeleri bile yarı uyuşuk ama bir o kadar tehlikeli psikopatlardan oluşuyor.
+
+    Neon Renkleri (Oyundaki Düşman Görünümü): Fosforlu Pembe ve Zehir Yeşili. (Çılgın, göz yoran neon kıyafetler, pembe mermiler).
+
+    Oyun İçi Özellikleri: Hareketleri düzensizdir (glitch gibi titrerler), tahmin etmesi zor, zıplayan/kaçan düşmanlardır.
+
+3. GÖLGE AĞ (Şantaj, Veri ve Hacker Ağı)
+
+    Tamamen İllegal İşleri: Kimlik hırsızlığı, beyin hackleme, zenginlere şantaj yapma, insanların hafızalarını silip karaborsada satma.
+
+    Yapıları: Sokakta pek görünmezler, şehrin karanlık sunucu odalarında saklanırlar. Fiziksel şiddetten çok teknolojiyi kullanırlar ama kurdukları yasadışı ağ sayesinde diğer iki kartel kadar zengin ve güçlüdürler. Diğer karteller bunlara dokunamaz çünkü herkesin en karanlık sırları bunların elindedir.
+
+    Neon Renkleri (Oyundaki Düşman Görünümü): Buz Mavisi (Cyan) ve Koyu Gri. (Yüzleri görünmeyen, dijital maskeli düşmanlar, mavi mermiler).
+
+    Oyun İçi Özellikleri: Daha defansif oynarlar, uzak mesafeden mermi spamlerler (Bullet hell tarzı).
+
+Oyuna Katkısı Özeti:
+
+Bu yapı sayesinde oyuna ekonomi veya ticaret mekaniği eklemeyeceksin.
+
+Oyun motorunda Enemy sınıfını yazarken sadece 3 farklı "Sprite (Renk) Teması" belirleyeceksin.
+Bölüm tasarımı yaparken (Level 11 - 24 arası) şöyle bir akış olacak:
+
+    Bir bölümde arka planda devasa neon pavyonlar göreceğiz, bize Sentezciler (Pembe) saldıracak.
+
+    Sonraki bölümde karanlık sunucu sokaklarına gireceğiz, Gölge Ağ (Mavi) ateş açacak.
+
+    Sonraki bölümde Krom Karteli (Sarı) ile çatışacağız.
+
+
+
+
+
+    Hatta bazı yoğun bölümlerde bu üç renk birbiriyle çatışırken sen aralarından "Dash" atarak sıyrılıp onları yok edeceksin.
+
+
+THE CORE (Çekirdek Konseyi)
+
+    Fraksiyon: Egemenler
+
+    Kimler? Sistemi kuran, yapay zekayı (Vasi'yi) yöneten "Tanrı-Yöneticiler".
+
+    Durumları (Oyunun En Büyük Sırrı): Dışarıdan "Kusursuz ve hatasız bir düzen" istiyor gibi görünürler. Ancak gerçek motivasyonları Kaosu Maksimize Etmektir. Eğer Varoşlar, Sanayiciler ve Askerler birleşip demokrasi isterse Core'un gücü biter. Bu yüzden herkesi birbirine düşürürler. Askerin yozlaşmasına, Sanayicinin mafya oynamasına ve Varoşların cehaletine bilerek izin verirler. Bölüp, parçalayıp, mutlak gücü ellerinde tutarlar.
+
+
+
+FIREWALL (Güvenlik Duvarı / Otoban)
+
+    Fraksiyon: Yozlaşmış Askeriye (Kızıl Muhafızlar)
+
+    Kimler? Çekirdek'e (Core) giden yolları korumakla görevli, en ağır teknolojiye sahip elit askeri kuvvet.
+
+    Durumları: Tamamen yozlaşmış durumdalar. Koruma görevini bir kenara bırakıp Sistemin en büyük Mafyası haline gelmişler. Sanayicilerden ağır haraç kesiyorlar, Neon Town'daki gruplara şantaj yapıyorlar ve alt katmanlara sırf zevk için zulmediyorlar. Gücü sadece kendi ceplerini doldurmak için kullanıyorlar.
+
+
+
+
+
+
+. ENDÜSTRİYEL ALAN (Sanayi)
+
+    Fraksiyon: Sanayiciler
+
+    Kimler? Sistemin donanımını, silahlarını ve enerjisini üreten mega-fabrika patronları.
+
+    Durumları: Parayı bulmuşlar, kibirliler ve gözlerini Neon Town'a dikmişler. Core'u taklit ederek kendi vasallarını yaratmak, mafyacılık oynamak istiyorlar. Gündüz yasal üretim yaparken gece herkese silah satarak (iki yüzlü şekilde) kaosu besliyorlar.
+
+    Zayıflıkları: Savaşmaktan zır cahiller. Kurdukları özel güvenlik timleri ve kiralık katiller ağır, pahalı zırhlar giyer ama taktik bilmezler. Tamamen tecrübesiz, panikleyen ve kolayca birbirini vuran "kof" bir güçleri var.
+
+
+
+
+THE SLUMS (Varoşlar / Çöplük)
+
+    Fraksiyon: Varoş İsyancıları (Paslılar)
+
+    Kimler? Sistemden dışlanmış, en alt tabaka.
+
+    Durumları: Öfkeliler ve mevcut sistemi yıkmak istiyorlar ama cahiller ve kendi içlerinde bölünmüşler. Gerçek düşmanın kim olduğunu bile bilmiyorlar.
+
+    Sistemin Gözündeki Yerleri: Core Konseyi onları bilerek yok etmiyor. Varoşların isyankar ve vahşi doğasını, Sanayicileri ve Neon Town halkını korkutmak için bir "Öcü" olarak kullanıyorlar. Varoşlar aslında sistemin kölesi olduklarının farkında bile değiller.
