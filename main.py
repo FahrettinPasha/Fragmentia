@@ -583,7 +583,8 @@ def init_game():
         # ─────────────────────────────────────────────────────────────────
         camera_speed = 0
         CURRENT_THEME = THEMES[theme_idx]
-        player_x, player_y = 120.0, float(LOGICAL_HEIGHT + 870)   # zemin kat (Y_GROUND - player_height)
+        # Güvenli başlangıç: zemin kat (Y_G=1000) üstü, player_h=30 → y=970
+        player_x, player_y = 120.0, float(LOGICAL_HEIGHT - 110)
         y_velocity = 0
         music_file = lvl_config.get('music_file', 'dark_ambient.mp3')
         current_level_music = load_sound_asset(
@@ -592,113 +593,86 @@ def init_game():
         audio_manager.play_music(current_level_music)
 
         # ══════════════════════════════════════════════════════════════════
-        # MALİKANE BİNA PLANI
+        # MALİKANE BİNA PLANI — Tüm Y koordinatları ekran içinde
         # ──────────────────────────────────────────────────────────────────
-        #  Harita: 3200px geniş × ~2200px yüksek  (yukarı doğru büyür)
+        #  Ölüm eşiği: player_y > LOGICAL_HEIGHT + 100 = 1180
+        #  → Tüm Y değerleri < 1050 tutulur (güvenli marj)
         #
-        #  Koordinat sistemi:  Y = LOGICAL_HEIGHT + offset (büyük Y → aşağı)
-        #  Oyuncu başlangıcı:  x=120,  y=LOGICAL_HEIGHT+900  (zemin kat)
-        #  Gizli Kasa hedefi:  x≈2900, y=LOGICAL_HEIGHT-200  (çatı katta)
+        #  KAT Y TABANLARI (platform.rect.top):
+        #   Zemin  Y_G  = LH - 80   = 1000
+        #   1. Kat Y_F1 = LH - 290  =  790
+        #   2. Kat Y_F2 = LH - 510  =  570
+        #   Çatı   Y_RF = LH - 730  =  350
         #
-        #  KAT DÜZENİ (yukarıdan aşağıya):
-        #   Çatı Terası  : Y_BASE - 200  (kat 4)
-        #   2. Kat        : Y_BASE + 200  (kat 3)
-        #   1. Kat        : Y_BASE + 600  (kat 2)
-        #   Zemin Kat     : Y_BASE + 900  (kat 1 / başlangıç)
-        #
-        #  MERDIVEN YERLERİ:
-        #   Sol merdiven  : x≈200  — zemin → 1.kat → 2.kat
-        #   Orta merdiven : x≈1400 — 1.kat → 2.kat
-        #   Sağ merdiven  : x≈2400 — 2.kat → çatı
-        #   Havalandırma  : x≈1800 — 2.kat içindeki kısa bağlantı
+        #  Oyuncu başlangıcı: x=120, y=Y_G-30=970  ← platform üstüne oturur
+        #  Gizli Kasa:        x≈2910, y=Y_RF-120=230 (kasa platformu üstü)
+        #  Harita: 3200px geniş; dikey span 730px → kamera Y ofseti = 0
         # ══════════════════════════════════════════════════════════════════
         all_platforms.empty()
-        _ti  = theme_idx
-        _LH  = LOGICAL_HEIGHT       # 1080
+        _ti = theme_idx
+        _LH = LOGICAL_HEIGHT   # 1080
 
-        # Kat Y koordinatları (platform üst yüzeyi)
-        Y_GROUND = _LH + 900     # Zemin kat zemini
-        Y_F1     = _LH + 600     # 1. Kat
-        Y_F2     = _LH + 200     # 2. Kat
-        Y_ROOF   = _LH - 200     # Çatı terası / Gizli Kasa katı
+        Y_G  = _LH - 80    # 1000 — Zemin kat
+        Y_F1 = _LH - 290   #  790 — 1. Kat
+        Y_F2 = _LH - 510   #  570 — 2. Kat
+        Y_RF = _LH - 730   #  350 — Çatı / Kasa katı
+        T = 20              # Platform kalınlığı
+        W = 18              # Duvar kalınlığı
 
-        T = 22     # Platform kalınlığı
-        W = 20     # Duvar kalınlığı
+        # ─── DIŞ YAPI ─────────────────────────────────────────────────────
+        all_platforms.add(Platform(40,   Y_RF, W, _LH - Y_RF + 80, theme_index=_ti))  # Sol dış duvar
+        all_platforms.add(Platform(3160, Y_RF, W, _LH - Y_RF + 80, theme_index=_ti))  # Sağ dış duvar
 
-        # ─── DIŞ YAPI — sol ve sağ duvar ─────────────────────────────────
-        # Sol dış duvar  (x=40,  y=Y_ROOF → Y_GROUND)
-        all_platforms.add(Platform(40, Y_ROOF, W, Y_GROUND - Y_ROOF + T, theme_index=_ti))
-        # Sağ dış duvar  (x=3180, y=Y_ROOF → Y_GROUND)
-        all_platforms.add(Platform(3180, Y_ROOF, W, Y_GROUND - Y_ROOF + T, theme_index=_ti))
+        # ─── ZEMİN KAT (Y_G = 1000) ──────────────────────────────────────
+        all_platforms.add(Platform(60,   Y_G, 860, T, theme_index=_ti))   # Giriş holü
+        all_platforms.add(Platform(920,  Y_F1 + T, W, Y_G - Y_F1, theme_index=_ti))  # Duvar 1
+        all_platforms.add(Platform(940,  Y_G, 960, T, theme_index=_ti))   # Güvenlik odası
+        all_platforms.add(Platform(1900, Y_F1 + T, W, Y_G - Y_F1, theme_index=_ti))  # Duvar 2
+        all_platforms.add(Platform(1920, Y_G, 1240, T, theme_index=_ti))  # Depo/koridor
 
-        # ─── ZEMİN KAT (Y=Y_GROUND) ─────────────────────────────────────
-        # Giriş holü  : x=60 → 900  (oyuncu buradan başlar)
-        all_platforms.add(Platform(60,   Y_GROUND, 840, T, theme_index=_ti))
-        # İç duvar 1  : x=900, zemin kattan 1.kata uzanır (kapı yok → merdiven gerekli)
-        all_platforms.add(Platform(900,  Y_F1 + T, W, Y_GROUND - Y_F1, theme_index=_ti))
-        # Güvenlik Odası : x=920 → 1900
-        all_platforms.add(Platform(920,  Y_GROUND, 980, T, theme_index=_ti))
-        # İç duvar 2  : x=1900
-        all_platforms.add(Platform(1900, Y_F1 + T, W, Y_GROUND - Y_F1, theme_index=_ti))
-        # Depo         : x=1920 → 3160
-        all_platforms.add(Platform(1920, Y_GROUND, 1260, T, theme_index=_ti))
+        # ─── ZEMİN → 1. KAT MERDİVENLERİ ────────────────────────────────
+        # Sol merdiven: 4 basamak × 52px yükselir (giriş holünden)
+        for _s in range(4):
+            all_platforms.add(Platform(130 + _s * 95, Y_G - (_s + 1) * 52, 100, T, theme_index=_ti))
+        # Sağ merdiven: 4 basamak (depodan)
+        for _s in range(4):
+            all_platforms.add(Platform(2600 + _s * 95, Y_G - (_s + 1) * 52, 100, T, theme_index=_ti))
 
-        # ─── ZEMİN KAT MERDİVENLERİ (zemin → 1. kat) ────────────────────
-        # Sol merdiven: x=100–200 bölgesinde 4 basamak, 75px aralıklı
-        _step_y = Y_GROUND
-        for _s in range(5):
-            all_platforms.add(Platform(120 + _s * 90, _step_y - (_s + 1) * 60, 110, T, theme_index=_ti))
-        # Sağ merdiven (depo → 1. kata): x≈2700–2900
-        _step_y = Y_GROUND
-        for _s in range(5):
-            all_platforms.add(Platform(2620 + _s * 90, _step_y - (_s + 1) * 60, 110, T, theme_index=_ti))
-
-        # ─── 1. KAT (Y=Y_F1) ─────────────────────────────────────────────
-        # Sol bölüm   : x=60 → 1300  (kütüphane)
-        all_platforms.add(Platform(60,   Y_F1, 1240, T, theme_index=_ti))
-        # İç duvar 1a : x=1300 (1. kattaki kapı bölücü)
-        all_platforms.add(Platform(1300, Y_F2 + T, W, Y_F1 - Y_F2, theme_index=_ti))
-        # Sağ bölüm   : x=1320 → 3160  (ofis/güvenlik merkezi)
-        all_platforms.add(Platform(1320, Y_F1, 1860, T, theme_index=_ti))
+        # ─── 1. KAT (Y_F1 = 790) ─────────────────────────────────────────
+        all_platforms.add(Platform(60,   Y_F1, 1240, T, theme_index=_ti))   # Kütüphane
+        all_platforms.add(Platform(1300, Y_F2 + T, W, Y_F1 - Y_F2, theme_index=_ti))  # Duvar 1a
+        all_platforms.add(Platform(1320, Y_F1, 1840, T, theme_index=_ti))   # Ofis/güvenlik
 
         # ─── 1. KAT → 2. KAT MERDİVENLERİ ───────────────────────────────
-        # Orta merdiven (x≈1380–1580)
-        _step_y = Y_F1
+        # Orta merdiven: 4 basamak × 55px
         for _s in range(4):
-            all_platforms.add(Platform(1370 + _s * 100, _step_y - (_s + 1) * 65, 120, T, theme_index=_ti))
-        # Sağ merdiven (x≈2800–3000)
-        _step_y = Y_F1
+            all_platforms.add(Platform(1090 + _s * 95, Y_F1 - (_s + 1) * 55, 105, T, theme_index=_ti))
+        # Sağ merdiven: 4 basamak
         for _s in range(4):
-            all_platforms.add(Platform(2810 + _s * 90, _step_y - (_s + 1) * 65, 110, T, theme_index=_ti))
+            all_platforms.add(Platform(2780 + _s * 90, Y_F1 - (_s + 1) * 55, 100, T, theme_index=_ti))
 
-        # ─── 2. KAT (Y=Y_F2) ─────────────────────────────────────────────
-        # Tüm 2. kat zemini: x=60 → 3160 (geniş açık alan + havalandırma kanalları)
-        all_platforms.add(Platform(60,   Y_F2, 3120, T, theme_index=_ti))
-        # Havalandırma rafları (atlama taşları)
-        all_platforms.add(Platform(400,  Y_F2 - 160, 200, T, theme_index=_ti))
-        all_platforms.add(Platform(700,  Y_F2 - 280, 200, T, theme_index=_ti))
-        all_platforms.add(Platform(1000, Y_F2 - 160, 200, T, theme_index=_ti))
-        all_platforms.add(Platform(1800, Y_F2 - 160, 200, T, theme_index=_ti))
-        all_platforms.add(Platform(2100, Y_F2 - 280, 200, T, theme_index=_ti))
-        all_platforms.add(Platform(2500, Y_F2 - 160, 200, T, theme_index=_ti))
-        # İç bölücü duvar (sunucu odası girişi)
-        all_platforms.add(Platform(2200, Y_ROOF + T, W, Y_F2 - Y_ROOF, theme_index=_ti))
+        # ─── 2. KAT (Y_F2 = 570) ─────────────────────────────────────────
+        all_platforms.add(Platform(60,   Y_F2, 3100, T, theme_index=_ti))   # Tam kat zemini
+        # Havalandırma rafları (gizlenme/atlama)
+        all_platforms.add(Platform(350,  Y_F2 - 130, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(620,  Y_F2 - 240, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(900,  Y_F2 - 130, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(1700, Y_F2 - 130, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(2000, Y_F2 - 240, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(2400, Y_F2 - 130, 160, T, theme_index=_ti))
+        all_platforms.add(Platform(2200, Y_RF + T, W, Y_F2 - Y_RF, theme_index=_ti))  # Sunucu odası duvarı
 
         # ─── 2. KAT → ÇATI MERDİVENLERİ ─────────────────────────────────
-        # Sağ taraf yüksek merdiven (x≈2500–2800)
-        _step_y = Y_F2
+        # Sağ köşe: 5 basamak × 72px
         for _s in range(5):
-            all_platforms.add(Platform(2480 + _s * 80, _step_y - (_s + 1) * 80, 100, T, theme_index=_ti))
+            all_platforms.add(Platform(2480 + _s * 80, Y_F2 - (_s + 1) * 72, 90, T, theme_index=_ti))
 
-        # ─── ÇATI TERASI / GİZLİ KASA KATI (Y=Y_ROOF) ───────────────────
-        # Sol çatı terası: x=60 → 1800
-        all_platforms.add(Platform(60,   Y_ROOF, 1740, T, theme_index=_ti))
-        # Ara boşluk (havalandırma kaçış penceresi): x=1800–2000 arası açık
-        # Sağ çatı (kasa odası): x=2000 → 3160
-        all_platforms.add(Platform(2000, Y_ROOF, 1180, T, theme_index=_ti))
-        # Kasa platformu (hedef): oyuncu buraya ulaşınca bölüm biter
-        # secret_safe_x=2900, secret_safe_y≈Y_ROOF-60 ile eşleşir
-        all_platforms.add(Platform(2720, Y_ROOF - 140, 380, T + 8, theme_index=_ti))  # KASA YÜKSELTİSİ
+        # ─── ÇATI / KASA KATI (Y_RF = 350) ───────────────────────────────
+        all_platforms.add(Platform(60,   Y_RF, 1740, T, theme_index=_ti))   # Sol çatı terası
+        # x=1800–2000 arası açık (havalandırma boşluğu)
+        all_platforms.add(Platform(2000, Y_RF, 1160, T, theme_index=_ti))   # Kasa odası zemini
+        # KASA PLATFORMU — hedef: x=2700, y=Y_RF-120=230
+        all_platforms.add(Platform(2700, Y_RF - 120, 420, T + 8, theme_index=_ti))
 
     elif lvl_config.get('type') == 'scrolling_boss':
         mult = lvl_config.get('speed_mult', 1.0)
@@ -1608,7 +1582,7 @@ def run_game_loop():
                 # ── 2D KAMERA TAKİBİ — Anlık ve kesin merkezleme ──────────────
                 # Harita boyutları — platform düzenine göre sabit
                 MANOR_MAP_WIDTH  = lvl_config.get('map_width',  3300)
-                MANOR_MAP_HEIGHT = lvl_config.get('map_height', 2200)
+                MANOR_MAP_HEIGHT = lvl_config.get('map_height', LOGICAL_HEIGHT)  # Y kamera hareketi yok
                 PLAYER_W_HALF = 15
                 PLAYER_H_HALF = 15
 
@@ -1630,7 +1604,7 @@ def run_game_loop():
                 # Oyuncu gizli kasanın etrafındaki alana girince görev tamamlanır.
                 # Kasa platformu: x=2720, y=Y_ROOF-140=(1080-200)-140=740
                 _safe_x = lvl_config.get("secret_safe_x", 2910)
-                _safe_y = lvl_config.get("secret_safe_y", 720)
+                _safe_y = lvl_config.get("secret_safe_y", 230)
                 _safe_r = lvl_config.get("secret_safe_radius", 100)
                 _dx_safe = player_x - _safe_x
                 _dy_safe = player_y - _safe_y
@@ -2155,6 +2129,12 @@ def run_game_loop():
                     # Arena zemininde yere gömme — sadece pozisyonu düzelt
                     player_y = LOGICAL_HEIGHT - 150
                     y_velocity = 0
+                elif lvl_config.get('type') == 'manor_stealth':
+                    # Malikane'de düşme → ölüm yok, başlangıç noktasına respawn
+                    player_x, player_y = 120.0, float(LOGICAL_HEIGHT - 110)
+                    y_velocity = 0
+                    is_jumping = is_dashing = is_slamming = False
+                    jumps_left = MAX_JUMPS
                 else:
                     GAME_STATE = 'GAME_OVER'
                     high_score = max(high_score, int(score))
