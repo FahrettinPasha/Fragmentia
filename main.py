@@ -16,6 +16,7 @@ import gc  # --- OPTİMİZASYON 2: Garbage Collector Kontrolü ---
 warnings.filterwarnings("ignore", category=UserWarning, module='pygame.pkgdata')
 
 from settings import *
+from settings import STEALTH_KILL_REACH_PX, STEALTH_KILL_KARMA
 
 # --- MODÜLER YAPI IMPORTLARI ---
 from game_config import EASY_MODE_LEVELS, BULLET_SPEED, BOSS_HEALTH, BOSS_DAMAGE, BOSS_FIRE_RATE, BOSS_INVULNERABILITY_TIME
@@ -38,6 +39,14 @@ from save_system import SaveManager
 from story_system import StoryManager
 from cutscene import AICutscene, IntroCutscene  # ← DEĞİŞİKLİK 1: IntroCutscene eklendi
 
+# --- BEAT 'EM UP / DÖVÜŞ SİSTEMİ ---
+from combat_system import (
+    ComboSystem, BeatArenaManager, PlayerHealth, CombatHUD
+)
+
+# --- GİZLİLİK SİSTEMİ ---
+from stealth_system import stealth_system
+
 # --- Asset Paths Tanımı ---
 asset_paths = {
     'font': 'assets/fonts/VCR_OSD_MONO.ttf',
@@ -48,6 +57,12 @@ asset_paths = {
 
 # --- YENİ: BOSS MANAGER SİSTEMİ ---
 boss_manager_system = BossManager()
+
+# --- BEAT 'EM UP SİSTEMLERİ ---
+combo_system  = ComboSystem()
+beat_arena    = BeatArenaManager()
+player_hp     = PlayerHealth(ARENA_PLAYER_HP)
+combat_hud    = CombatHUD()
 
 # --- OPTİMİZASYON 1: UI CACHE DEĞİŞKENLERİ ---
 cached_ui_surface = None
@@ -476,6 +491,7 @@ def init_game():
     global level_15_timer, finisher_active, finisher_state_timer, finisher_type, level_15_cutscene_played
     global active_background # Global active_background
     global cached_ui_surface, last_score # UI Cache
+    global combo_system, beat_arena, player_hp
 
     # --- OPTİMİZASYON: Oyun sırasında GC'yi kapat ---
     gc.disable()
@@ -522,6 +538,10 @@ def init_game():
     active_dash_cd = DASH_COOLDOWN
     active_slam_cd = SLAM_COOLDOWN_BASE
     boss_manager_system.reset()
+    # --- DÖVÜŞ SİSTEMİ SIFIRLA ---
+    combo_system.reset()
+    beat_arena.reset()
+    player_hp = PlayerHealth(ARENA_PLAYER_HP)
     npcs.clear()
     current_npc = None
     npc_conversation_active = False
@@ -539,8 +559,147 @@ def init_game():
         current_level_music = load_sound_asset(f"assets/music/{music_file}", generate_calm_ambient, 0.6)
         audio_manager.play_music(current_level_music)
 
+    elif lvl_config.get('type') == 'beat_arena':
+        # --- BEAT 'EM UP ARENA BAŞLATMA ---
+        camera_speed = 0   # Kamera durur — platform kaymaz
+        CURRENT_THEME = THEMES[theme_idx]
+        player_x, player_y = 200.0, float(LOGICAL_HEIGHT - 180)
+        y_velocity = 0
+        music_file = lvl_config.get('music_file', 'dark_ambient.mp3')
+        current_level_music = load_sound_asset(f"assets/music/{music_file}", generate_ambient_fallback, 1.0)
+        audio_manager.play_music(current_level_music)
+        # Düz zemin + yan duvar platformları
+        all_platforms.empty()
+        floor_plat = Platform(0, LOGICAL_HEIGHT - 80, LOGICAL_WIDTH, 80, theme_index=theme_idx)
+        all_platforms.add(floor_plat)
+        # Arena henüz başlatılmadı — PLAYING loop içinde start() çağrılacak
+        beat_arena.reset()
+
     elif lvl_config.get('type') == 'boss_fight':
         pass
+    elif lvl_config.get('type') == 'manor_stealth':
+        # ─────────────────────────────────────────────────────────────────
+        # MALİKANE SIZDIRMA — camera_speed=0, 2D kameraya kilitli
+        # ─────────────────────────────────────────────────────────────────
+        camera_speed = 0
+        CURRENT_THEME = THEMES[theme_idx]
+        player_x, player_y = 120.0, float(LOGICAL_HEIGHT + 870)   # zemin kat (Y_GROUND - player_height)
+        y_velocity = 0
+        music_file = lvl_config.get('music_file', 'dark_ambient.mp3')
+        current_level_music = load_sound_asset(
+            f"assets/music/{music_file}", generate_ambient_fallback, 0.5
+        )
+        audio_manager.play_music(current_level_music)
+
+        # ══════════════════════════════════════════════════════════════════
+        # MALİKANE BİNA PLANI
+        # ──────────────────────────────────────────────────────────────────
+        #  Harita: 3200px geniş × ~2200px yüksek  (yukarı doğru büyür)
+        #
+        #  Koordinat sistemi:  Y = LOGICAL_HEIGHT + offset (büyük Y → aşağı)
+        #  Oyuncu başlangıcı:  x=120,  y=LOGICAL_HEIGHT+900  (zemin kat)
+        #  Gizli Kasa hedefi:  x≈2900, y=LOGICAL_HEIGHT-200  (çatı katta)
+        #
+        #  KAT DÜZENİ (yukarıdan aşağıya):
+        #   Çatı Terası  : Y_BASE - 200  (kat 4)
+        #   2. Kat        : Y_BASE + 200  (kat 3)
+        #   1. Kat        : Y_BASE + 600  (kat 2)
+        #   Zemin Kat     : Y_BASE + 900  (kat 1 / başlangıç)
+        #
+        #  MERDIVEN YERLERİ:
+        #   Sol merdiven  : x≈200  — zemin → 1.kat → 2.kat
+        #   Orta merdiven : x≈1400 — 1.kat → 2.kat
+        #   Sağ merdiven  : x≈2400 — 2.kat → çatı
+        #   Havalandırma  : x≈1800 — 2.kat içindeki kısa bağlantı
+        # ══════════════════════════════════════════════════════════════════
+        all_platforms.empty()
+        _ti  = theme_idx
+        _LH  = LOGICAL_HEIGHT       # 1080
+
+        # Kat Y koordinatları (platform üst yüzeyi)
+        Y_GROUND = _LH + 900     # Zemin kat zemini
+        Y_F1     = _LH + 600     # 1. Kat
+        Y_F2     = _LH + 200     # 2. Kat
+        Y_ROOF   = _LH - 200     # Çatı terası / Gizli Kasa katı
+
+        T = 22     # Platform kalınlığı
+        W = 20     # Duvar kalınlığı
+
+        # ─── DIŞ YAPI — sol ve sağ duvar ─────────────────────────────────
+        # Sol dış duvar  (x=40,  y=Y_ROOF → Y_GROUND)
+        all_platforms.add(Platform(40, Y_ROOF, W, Y_GROUND - Y_ROOF + T, theme_index=_ti))
+        # Sağ dış duvar  (x=3180, y=Y_ROOF → Y_GROUND)
+        all_platforms.add(Platform(3180, Y_ROOF, W, Y_GROUND - Y_ROOF + T, theme_index=_ti))
+
+        # ─── ZEMİN KAT (Y=Y_GROUND) ─────────────────────────────────────
+        # Giriş holü  : x=60 → 900  (oyuncu buradan başlar)
+        all_platforms.add(Platform(60,   Y_GROUND, 840, T, theme_index=_ti))
+        # İç duvar 1  : x=900, zemin kattan 1.kata uzanır (kapı yok → merdiven gerekli)
+        all_platforms.add(Platform(900,  Y_F1 + T, W, Y_GROUND - Y_F1, theme_index=_ti))
+        # Güvenlik Odası : x=920 → 1900
+        all_platforms.add(Platform(920,  Y_GROUND, 980, T, theme_index=_ti))
+        # İç duvar 2  : x=1900
+        all_platforms.add(Platform(1900, Y_F1 + T, W, Y_GROUND - Y_F1, theme_index=_ti))
+        # Depo         : x=1920 → 3160
+        all_platforms.add(Platform(1920, Y_GROUND, 1260, T, theme_index=_ti))
+
+        # ─── ZEMİN KAT MERDİVENLERİ (zemin → 1. kat) ────────────────────
+        # Sol merdiven: x=100–200 bölgesinde 4 basamak, 75px aralıklı
+        _step_y = Y_GROUND
+        for _s in range(5):
+            all_platforms.add(Platform(120 + _s * 90, _step_y - (_s + 1) * 60, 110, T, theme_index=_ti))
+        # Sağ merdiven (depo → 1. kata): x≈2700–2900
+        _step_y = Y_GROUND
+        for _s in range(5):
+            all_platforms.add(Platform(2620 + _s * 90, _step_y - (_s + 1) * 60, 110, T, theme_index=_ti))
+
+        # ─── 1. KAT (Y=Y_F1) ─────────────────────────────────────────────
+        # Sol bölüm   : x=60 → 1300  (kütüphane)
+        all_platforms.add(Platform(60,   Y_F1, 1240, T, theme_index=_ti))
+        # İç duvar 1a : x=1300 (1. kattaki kapı bölücü)
+        all_platforms.add(Platform(1300, Y_F2 + T, W, Y_F1 - Y_F2, theme_index=_ti))
+        # Sağ bölüm   : x=1320 → 3160  (ofis/güvenlik merkezi)
+        all_platforms.add(Platform(1320, Y_F1, 1860, T, theme_index=_ti))
+
+        # ─── 1. KAT → 2. KAT MERDİVENLERİ ───────────────────────────────
+        # Orta merdiven (x≈1380–1580)
+        _step_y = Y_F1
+        for _s in range(4):
+            all_platforms.add(Platform(1370 + _s * 100, _step_y - (_s + 1) * 65, 120, T, theme_index=_ti))
+        # Sağ merdiven (x≈2800–3000)
+        _step_y = Y_F1
+        for _s in range(4):
+            all_platforms.add(Platform(2810 + _s * 90, _step_y - (_s + 1) * 65, 110, T, theme_index=_ti))
+
+        # ─── 2. KAT (Y=Y_F2) ─────────────────────────────────────────────
+        # Tüm 2. kat zemini: x=60 → 3160 (geniş açık alan + havalandırma kanalları)
+        all_platforms.add(Platform(60,   Y_F2, 3120, T, theme_index=_ti))
+        # Havalandırma rafları (atlama taşları)
+        all_platforms.add(Platform(400,  Y_F2 - 160, 200, T, theme_index=_ti))
+        all_platforms.add(Platform(700,  Y_F2 - 280, 200, T, theme_index=_ti))
+        all_platforms.add(Platform(1000, Y_F2 - 160, 200, T, theme_index=_ti))
+        all_platforms.add(Platform(1800, Y_F2 - 160, 200, T, theme_index=_ti))
+        all_platforms.add(Platform(2100, Y_F2 - 280, 200, T, theme_index=_ti))
+        all_platforms.add(Platform(2500, Y_F2 - 160, 200, T, theme_index=_ti))
+        # İç bölücü duvar (sunucu odası girişi)
+        all_platforms.add(Platform(2200, Y_ROOF + T, W, Y_F2 - Y_ROOF, theme_index=_ti))
+
+        # ─── 2. KAT → ÇATI MERDİVENLERİ ─────────────────────────────────
+        # Sağ taraf yüksek merdiven (x≈2500–2800)
+        _step_y = Y_F2
+        for _s in range(5):
+            all_platforms.add(Platform(2480 + _s * 80, _step_y - (_s + 1) * 80, 100, T, theme_index=_ti))
+
+        # ─── ÇATI TERASI / GİZLİ KASA KATI (Y=Y_ROOF) ───────────────────
+        # Sol çatı terası: x=60 → 1800
+        all_platforms.add(Platform(60,   Y_ROOF, 1740, T, theme_index=_ti))
+        # Ara boşluk (havalandırma kaçış penceresi): x=1800–2000 arası açık
+        # Sağ çatı (kasa odası): x=2000 → 3160
+        all_platforms.add(Platform(2000, Y_ROOF, 1180, T, theme_index=_ti))
+        # Kasa platformu (hedef): oyuncu buraya ulaşınca bölüm biter
+        # secret_safe_x=2900, secret_safe_y≈Y_ROOF-60 ile eşleşir
+        all_platforms.add(Platform(2720, Y_ROOF - 140, 380, T + 8, theme_index=_ti))  # KASA YÜKSELTİSİ
+
     elif lvl_config.get('type') == 'scrolling_boss':
         mult = lvl_config.get('speed_mult', 1.0)
         camera_speed = (INITIAL_CAMERA_SPEED * 1.25) * mult
@@ -629,6 +788,16 @@ def init_game():
     all_vfx.empty()
     character_animator.__init__()
 
+    # --- GİZLİLİK SİSTEMİ: Bölüm düzenini yükle ---
+    stealth_system.setup_level(current_level_idx)
+
+    # --- MALİKANE: Önbelleğe alınmış bayrakları temizle ---
+    # goal_score=0 olan manor_stealth bölümlerinde önceki çalışmadan kalan
+    # "area_secret_safe" bayrağı anlık kazanmayı tetikleyebilir.
+    if lvl_config.get('type') == 'manor_stealth':
+        from mission_system import mission_manager
+        mission_manager.set_flag("area_secret_safe", False)
+
 def main():
     global GAME_STATE
     GAME_STATE = 'MENU'
@@ -655,8 +824,12 @@ def run_game_loop():
     global game_settings
     global active_background
     global cached_ui_surface, last_score, last_active_ui_elements
+    global combo_system, beat_arena, player_hp, combat_hud
 
     is_super_mode = False
+    # Malikane bölümü için kamera X ve Y ofseti (oyuncuyu ekranın ortasında tutar)
+    manor_camera_offset_x = 0
+    manor_camera_offset_y = 0
     terminal_input = ""
     terminal_status = "KOMUT BEKLENİYOR..."
     active_ui_elements = {}
@@ -966,6 +1139,24 @@ def run_game_loop():
                     if closest_npc:
                         start_npc_conversation(closest_npc)
 
+                # --- DÖVÜŞ TUŞLARI (tüm bölümlerde aktif) ---
+                if GAME_STATE == 'PLAYING':
+                    px_c = int(player_x + 15)
+                    py_c = int(player_y + 15)
+                    if event.key == pygame.K_j:   # Hafif vuruş
+                        combo_system.input_light(player_x, player_y, player_direction)
+                        all_vfx.add(ParticleExplosion(
+                            px_c + player_direction * 40, py_c,
+                            (255, 150, 50), 8
+                        ))
+                    elif event.key == pygame.K_k:  # Ağır vuruş
+                        combo_system.input_heavy(player_x, player_y, player_direction)
+                        all_vfx.add(Shockwave(
+                            px_c + player_direction * 50, py_c,
+                            CURSED_RED, max_radius=60, speed=12
+                        ))
+                        screen_shake = 6
+
                 elif GAME_STATE == 'TERMINAL':
                     if event.key == pygame.K_RETURN:
                         if terminal_input.upper() == "SUPER_MODE_ON":
@@ -1050,9 +1241,50 @@ def run_game_loop():
                                                         py + random.randint(-60, 60),
                                                         PLAYER_SLAM, 12))
 
+                    # ── F TUŞU: SESSİZ SUİKAST ────────────────────────────────────
+                    # Sadece manor_stealth bölümlerinde aktif.
+                    # stealth_system.try_stealth_kill() iki şartı kontrol eder:
+                    #   1) Muhafızın suspicion < 0.5 (seni fark etmemiş)
+                    #   2) Oyuncu muhafızın ARKASINDA (facing yönüne ters taraf)
+                    # Başarılıysa: muhafız anında deaktive, karma +1, yeşil VFX
+                    # Başarısızsa: ekrana kısa hata bildirimi (kırmızı metin)
+                    if event.key == pygame.K_f:
+                        _manor_lvl = EASY_MODE_LEVELS.get(current_level_idx, {})
+                        if _manor_lvl.get('type') == 'manor_stealth':
+                            _sk_result = stealth_system.try_stealth_kill(
+                                player_x + 15, player_y + 15,
+                                reach=STEALTH_KILL_REACH_PX
+                            )
+                            if _sk_result["success"]:
+                                # Başarılı sessiz öldürme
+                                _gx = int(_sk_result["x"])
+                                _gy = int(_sk_result["y"])
+                                score += 3000
+                                save_manager.update_karma(STEALTH_KILL_KARMA)
+                                player_karma = save_manager.get_karma()
+                                enemies_killed_current_level += 1
+                                karma_notification_text  = f"SESSİZ SUİKAST! KARMA +{STEALTH_KILL_KARMA}"
+                                karma_notification_timer = 80
+                                # Gizli yeşil parçacık patlaması — ışıklı değil, sütunlu değil
+                                all_vfx.add(ParticleExplosion(_gx, _gy, (0, 200, 100), 14))
+                                all_vfx.add(Shockwave(_gx, _gy, (0, 180, 80),
+                                                      max_radius=60, rings=1, speed=10))
+                                screen_shake = max(screen_shake, 3)
+                                # Tüm muhafızlar elenince opsiyonel hedefi işaretle
+                                if stealth_system.active_guard_count() == 0:
+                                    from mission_system import mission_manager
+                                    mission_manager.complete_objective("eliminate_guards")
+                            else:
+                                # Başarısız — neden başarısız olduğunu bildir
+                                _reason = _sk_result.get("reason", "BAŞARISIZ")
+                                karma_notification_text  = f"SUİKAST BAŞARISIZ: {_reason}"
+                                karma_notification_timer = 60
+
                     if event.key == pygame.K_SPACE and dash_cooldown_timer <= 0 and not is_dashing:
                         is_dashing = True
-                        dash_timer = DASH_DURATION
+                        # Malikane bölümünde dash mesafesi kısaltılır (kaçış adımı)
+                        _manor_dash_cfg = EASY_MODE_LEVELS.get(current_level_idx, {})
+                        dash_timer = (DASH_DURATION // 3) if _manor_dash_cfg.get('type') == 'manor_stealth' else DASH_DURATION
                         dash_cooldown_timer = active_dash_cd
                         screen_shake = 8
                         dash_particles_timer = 0
@@ -1119,6 +1351,16 @@ def run_game_loop():
                 active_dash_cd = 0
                 active_slam_cd = 0
 
+            # ── MALİKANE STEALTHFİZİĞİ OVERRİDE ────────────────────────────
+            # Normal bölüm hız/cooldown hesaplamaları stealth için çok hızlı.
+            # manor_stealth bölümünde tüm karma/level buff'ları bastırılır ve
+            # hız %45'e düşürülür; dash kısa kaçış adımına (1/3 süre) indirgenir.
+            _lvl_cfg_physics = EASY_MODE_LEVELS.get(current_level_idx, {})
+            if _lvl_cfg_physics.get('type') == 'manor_stealth':
+                active_player_speed = PLAYER_SPEED * 0.80          # Normal'in %80'i — kontrollü ama kullanılabilir
+                active_dash_cd      = DASH_COOLDOWN * 1.2          # Dash hafif seyrek
+                active_slam_cd      = SLAM_COOLDOWN_BASE            # Slam değişmez
+
             lvl_config = EASY_MODE_LEVELS.get(current_level_idx, EASY_MODE_LEVELS[1])
             if lvl_config.get('type') == 'rest_area':
                 if player_x > LOGICAL_WIDTH + 100:
@@ -1128,13 +1370,293 @@ def run_game_loop():
                         init_game()
                     else:
                         GAME_STATE = 'GAME_COMPLETE'
+
+            # ═════════════════════════════════════════════════════════════
+            # GİZLİLİK SİSTEMİ — Her karede çalışır
+            # ═════════════════════════════════════════════════════════════
+            stealth_system.update(dt, player_x, player_y)
+
+            # Stealth olaylarını oku (tespitler, karma bonusları, uyarılar)
+            for stealth_event in stealth_system.poll_events():
+                ev_type = stealth_event.get('type')
+                if ev_type == 'detected':
+                    # Tespit edilince ekran sarsıntısı + karma cezası
+                    screen_shake = max(screen_shake, 10)
+                    save_manager.update_karma(-5)
+                    player_karma = save_manager.get_karma()
+                    karma_notification_text  = "TESPİT EDİLDİN! KARMA -5"
+                    karma_notification_timer = 90
+                    all_vfx.add(ScreenFlash((255, 50, 50), 80, 5))
+                elif ev_type == 'stealth_bonus':
+                    # Başarılı gizlilik → karma bonusu
+                    bonus = stealth_event.get('value', 5)
+                    save_manager.update_karma(bonus)
+                    player_karma = save_manager.get_karma()
+                    karma_notification_text  = f"STEALTH BONUS! KARMA +{bonus}"
+                    karma_notification_timer = 70
+                elif ev_type == 'alert':
+                    # Genel uyarı mesajı
+                    karma_notification_text  = stealth_event.get('message', 'UYARI!')
+                    karma_notification_timer = 60
+
+            # ═════════════════════════════════════════════════════════════
+            # GLOBAL DÖVÜŞ SİSTEMİ — Her bölümde çalışır
+            # ═════════════════════════════════════════════════════════════
+
+            # Kombo zamanlayıcısı + can yenileme her frame güncellenir
+            combo_system.update(dt)
+            player_hp.update(dt)
+
+            # ── J/K Melee vuruş tespiti ───────────────────────────────────
+            # Hedef havuzu: normal düşmanlar + arena düşmanları (eğer aktifse)
+            _arena_targets = list(beat_arena.arena_enemies) if beat_arena.active else []
+            _all_targets   = list(all_enemies) + _arena_targets
+            melee_hits = combo_system.check_hits(_all_targets)
+            for hit in melee_hits:
+                _enemy  = hit["enemy"]
+                _damage = hit["damage"]
+                _vfx    = hit["vfx_type"]
+                _hx, _hy = hit["hit_pos"]
+
+                # Hasar uygula — ArenaEnemy veya normal düşman
+                if hasattr(_enemy, 'take_damage'):
+                    _killed = _enemy.take_damage(_damage)
+                    score  += _damage * 10
+                else:
+                    # CursedEnemy / DroneEnemy / TankEnemy → tek vuruşta ölür
+                    _killed = True
+                    _enemy.kill()
+                    score  += 500
+
+                # Kombo tetiklenince bildirim + skor bonusu
+                if hit["combo"]:
+                    _combo_info = hit["combo"]
+                    score += _combo_info.get("score_bonus", 0)
+                    save_manager.update_karma(-_combo_info.get("karma", 2))
+                    player_karma = save_manager.get_karma()
+                    karma_notification_text  = f"KOMBO: {_combo_info['name']}!"
+                    karma_notification_timer = 70
+                else:
+                    save_manager.update_karma(-2)
+                    player_karma = save_manager.get_karma()
+
+                # VFX
+                if _vfx == "explosion":
+                    all_vfx.add(ParticleExplosion(_hx, _hy, CURSED_PURPLE, 18))
+                elif _vfx == "shockwave":
+                    all_vfx.add(Shockwave(_hx, _hy, CURSED_RED, max_radius=80, speed=12))
+                elif _vfx == "lightning":
+                    all_vfx.add(LightningBolt(int(player_x + 15), int(player_y + 15),
+                                              _hx, _hy, (100, 200, 255), life=8))
+                else:
+                    all_vfx.add(FlameSpark(_hx, _hy, random.uniform(0, math.pi * 2),
+                                           random.uniform(4, 10), (255, 150, 50), life=15))
+
+                if _killed:
+                    enemies_killed_current_level += 1
+                    screen_shake = max(screen_shake, 8)
+                    all_vfx.add(ScreenFlash(CURSED_PURPLE, 40, 4))
+
+            # VFX kuyruğunu boşalt
+            for _ in combo_system.pop_vfx():
+                pass
+
+            # ── DASH → Tüm düşmanlara AOE hasar ─────────────────────────
+            if is_dashing:
+                _px_d = int(player_x + 15)
+                _py_d = int(player_y + 15)
+                _DASH_DMG    = 45
+                _DASH_RADIUS = 110
+                # Normal düşmanlar (all_enemies) — mevcut kod ile çakışmayı önlemek için
+                # sadece ArenaEnemy türünü burada ele alıyoruz; CursedEnemy vb. zaten
+                # mevcut sprite collision koduyla öldürülüyor (aşağıda).
+                for _ae in _arena_targets:
+                    if not _ae.is_active:
+                        continue
+                    _d = math.sqrt((_ae.rect.centerx - _px_d)**2 + (_ae.rect.centery - _py_d)**2)
+                    if _d < _DASH_RADIUS:
+                        _dk = _ae.take_damage(_DASH_DMG, bypass_block=True)
+                        score += _DASH_DMG * 8
+                        save_manager.update_karma(-8)
+                        player_karma = save_manager.get_karma()
+                        all_vfx.add(ParticleExplosion(_ae.rect.centerx, _ae.rect.centery, METEOR_FIRE, 15))
+                        all_vfx.add(Shockwave(_ae.rect.centerx, _ae.rect.centery,
+                                              (255, 120, 0), max_radius=70, speed=14))
+                        if _dk:
+                            enemies_killed_current_level += 1
+                            screen_shake = max(screen_shake, 10)
+                            karma_notification_text  = "DASH STRIKE!"
+                            karma_notification_timer = 40
+                            all_vfx.add(ScreenFlash(METEOR_FIRE, 50, 4))
+
+            # ── SLAM → Yere değdiğinde tüm düşmanlara AOE hasar ─────────
+            if is_slamming and slam_stall_timer <= 0:
+                _px_s = int(player_x + 15)
+                _py_s = int(player_y + 30)
+                _SLAM_DMG    = 60
+                _SLAM_RADIUS = 140
+                # Normal düşmanlar
+                for _ne in list(all_enemies):
+                    if isinstance(_ne, EnemyBullet):
+                        continue
+                    _ds = math.sqrt((_ne.rect.centerx - _px_s)**2 + (_ne.rect.centery - _py_s)**2)
+                    if _ds < _SLAM_RADIUS:
+                        _ne.kill()
+                        score += 500
+                        save_manager.update_karma(-10)
+                        player_karma = save_manager.get_karma()
+                        enemies_killed_current_level += 1
+                        all_vfx.add(ParticleExplosion(_ne.rect.centerx, _ne.rect.centery, PLAYER_SLAM, 18))
+                # Arena düşmanları
+                for _ae2 in _arena_targets:
+                    if not _ae2.is_active:
+                        continue
+                    _ds2 = math.sqrt((_ae2.rect.centerx - _px_s)**2 + (_ae2.rect.centery - _py_s)**2)
+                    if _ds2 < _SLAM_RADIUS:
+                        _sk = _ae2.take_damage(_SLAM_DMG, bypass_block=True)
+                        score += _SLAM_DMG * 8
+                        save_manager.update_karma(-10)
+                        player_karma = save_manager.get_karma()
+                        all_vfx.add(ParticleExplosion(_ae2.rect.centerx, _ae2.rect.centery, PLAYER_SLAM, 20))
+                        all_vfx.add(Shockwave(_px_s, _py_s, PLAYER_SLAM, max_radius=_SLAM_RADIUS, speed=18))
+                        if _sk:
+                            enemies_killed_current_level += 1
+                            screen_shake = max(screen_shake, 20)
+                            karma_notification_text  = "SLAM KO!"
+                            karma_notification_timer = 50
+                            all_vfx.add(ScreenFlash(PLAYER_SLAM, 80, 6))
+
+            # ═════════════════════════════════════════════════════════════
+            # BEAT 'EM UP ARENA — Sadece arena bölümlerine özgü mantık
+            # ═════════════════════════════════════════════════════════════
+            if lvl_config.get('type') == 'beat_arena':
+                camera_speed = 0   # Kamera sabit
+
+                # Arena henüz başlamadıysa başlat
+                if not beat_arena.active and not beat_arena.is_complete:
+                    beat_arena.start(lvl_config.get('arena_level_id', current_level_idx))
+
+                # Arena düşmanlarını güncelle
+                beat_arena.update(dt, frame_mul,
+                                  player_x + 15,
+                                  player_y + 15,
+                                  0.0)
+
+                # Arena düşmanlarının oyuncuya saldırısı
+                for atk in beat_arena.get_enemy_attacks():
+                    _pcx = atk.get("player_cx", player_x + 15)
+                    _pcy = atk.get("player_cy", player_y + 15)
+                    _dist_atk = math.sqrt((_pcx - atk["x"])**2 + (_pcy - atk["y"])**2)
+                    if _dist_atk < 120:
+                        _died = player_hp.take_damage(atk["damage"])
+                        screen_shake = max(screen_shake, 12)
+                        all_vfx.add(ScreenFlash((255, 0, 0), 100, 6))
+                        all_vfx.add(ParticleExplosion(int(player_x + 15), int(player_y + 15),
+                                                      (220, 0, 0), 12))
+                        if _died:
+                            GAME_STATE = 'GAME_OVER'
+                            high_score = max(high_score, int(score))
+                            save_manager.update_high_score('easy_mode', current_level_idx, score)
+                            audio_manager.stop_music()
+
+                # Ödül toplama
+                _player_rect_d = pygame.Rect(int(player_x), int(player_y), 30, 30)
+                for drop in beat_arena.collect_drops(_player_rect_d):
+                    if drop["type"] == "score":
+                        score += drop["value"]
+                        karma_notification_text  = f"+{drop['value']} PUAN!"
+                        karma_notification_timer = 45
+                    elif drop["type"] == "karma":
+                        save_manager.update_karma(drop["value"])
+                        player_karma = save_manager.get_karma()
+                        karma_notification_text  = f"KARMA +{drop['value']}"
+                        karma_notification_timer = 45
+                    elif drop["type"] == "health":
+                        player_hp.heal(25)
+                        karma_notification_text  = "CAN +25"
+                        karma_notification_timer = 45
+                    all_vfx.add(EnergyOrb(int(player_x + 15), int(player_y - 30),
+                                          (255, 215, 0), 8, 20))
+
+                # Tüm dalgalar temizlendi → bölüm geçişi
+                if beat_arena.is_complete:
+                    score += beat_arena.total_bonus
+                    save_manager.update_karma(15)
+                    player_karma = save_manager.get_karma()
+                    beat_arena.reset()
+                    GAME_STATE = 'LEVEL_COMPLETE'
+                    save_manager.unlock_next_level('easy_mode', current_level_idx)
+                    save_manager.update_high_score('easy_mode', current_level_idx, score)
+            # ─────────────────────────────────────────────────────────────
             else:
                 if current_level_idx != 99:
-                    camera_speed = min(MAX_CAMERA_SPEED, camera_speed + SPEED_INCREMENT_RATE * frame_mul)
-                    score_gain = 0.1 * camera_speed * frame_mul
+                    if lvl_config.get('type') != 'beat_arena':
+                        camera_speed = min(MAX_CAMERA_SPEED, camera_speed + SPEED_INCREMENT_RATE * frame_mul)
+                    score_gain = 0.1 * max(camera_speed, 1.0) * frame_mul
                     if is_super_mode:
                         score_gain *= 40
                     score += score_gain
+
+            # ═════════════════════════════════════════════════════════════
+            # MALİKANE KAMERA TAKİBİ — ÇOK KRİTİK
+            # manor_stealth tipinde kamera kendi kendine kaymaz;
+            # bunun yerine kamera X ofseti oyuncuyu her zaman ekran
+            # ortasında tutacak şekilde hesaplanır.
+            # Tüm draw çağrıları bu ofseti dikkate alır.
+            # ═════════════════════════════════════════════════════════════
+            if lvl_config.get('type') == 'manor_stealth':
+                # ── 2D KAMERA TAKİBİ — Anlık ve kesin merkezleme ──────────────
+                # Harita boyutları — platform düzenine göre sabit
+                MANOR_MAP_WIDTH  = lvl_config.get('map_width',  3300)
+                MANOR_MAP_HEIGHT = lvl_config.get('map_height', 2200)
+                PLAYER_W_HALF = 15
+                PLAYER_H_HALF = 15
+
+                # Oyuncunun gerçek merkezi → hedef kamera ofseti
+                _target_cam_x = (player_x + PLAYER_W_HALF) - LOGICAL_WIDTH  // 2
+                _target_cam_y = (player_y + PLAYER_H_HALF) - LOGICAL_HEIGHT // 2
+
+                # Sınır: harita dışına çıkılmasın
+                _cam_max_x = max(0, MANOR_MAP_WIDTH  - LOGICAL_WIDTH)
+                _cam_max_y = max(0, MANOR_MAP_HEIGHT - LOGICAL_HEIGHT)
+                _target_cam_x = max(0, min(_target_cam_x, _cam_max_x))
+                _target_cam_y = max(0, min(_target_cam_y, _cam_max_y))
+
+                # Anlık takip — gecikme yok, kamera her zaman oyuncuyu ortalar
+                manor_camera_offset_x = int(_target_cam_x)
+                manor_camera_offset_y = int(_target_cam_y)
+
+                # Malikane bölümünde area_reached kontrolü:
+                # Oyuncu gizli kasanın etrafındaki alana girince görev tamamlanır.
+                # Kasa platformu: x=2720, y=Y_ROOF-140=(1080-200)-140=740
+                _safe_x = lvl_config.get("secret_safe_x", 2910)
+                _safe_y = lvl_config.get("secret_safe_y", 720)
+                _safe_r = lvl_config.get("secret_safe_radius", 100)
+                _dx_safe = player_x - _safe_x
+                _dy_safe = player_y - _safe_y
+                if math.sqrt(_dx_safe * _dx_safe + _dy_safe * _dy_safe) < _safe_r:
+                    # İlk kez tetiklendiyse hedefleri tamamla ve bölümü bitir
+                    from mission_system import mission_manager
+                    mission_manager.set_flag("area_secret_safe", True)
+                    mission_manager.complete_objective("find_secret_safe")
+                    # Tüm muhafızlar elendiyse "eliminate_guards" hedefini de tamamla
+                    if stealth_system.active_guard_count() == 0:
+                        mission_manager.complete_objective("eliminate_guards")
+                    # Hiç alarm verilmediyse opsiyonel bonus
+                    if stealth_system.global_alert == 0:   # ALERT_UNDETECTED
+                        mission_manager.complete_objective("stealth_optional_no_alert")
+                        save_manager.update_karma(15)
+                        player_karma = save_manager.get_karma()
+                        karma_notification_text  = "MÜKEMMEL GİZLİLİK! KARMA +15"
+                        karma_notification_timer = 120
+                    # Bölüm tamamlandı
+                    score += 20000
+                    GAME_STATE = 'LEVEL_COMPLETE'
+                    save_manager.unlock_next_level('easy_mode', current_level_idx)
+                    save_manager.update_high_score('easy_mode', current_level_idx, score)
+            else:
+                manor_camera_offset_x = 0
+                manor_camera_offset_y = 0
 
             old_x, old_y = player_x, player_y
             keys = pygame.key.get_pressed()
@@ -1381,6 +1903,19 @@ def run_game_loop():
                         all_vfx.add(ParticleExplosion(player_x+15, player_y+30, CURRENT_THEME["player_color"], 8))
                     break
 
+            # ── MALİKANE: Yatay duvar çarpışması ─────────────────────────────
+            # Duvar platformları (yüksekliği > genişliğinden büyük olanlar)
+            # oyuncunun soldan veya sağdan geçişini engeller.
+            if lvl_config.get('type') == 'manor_stealth':
+                _wall_rect = pygame.Rect(int(player_x), int(player_y) + 4, PLAYER_W, PLAYER_H - 8)
+                for _wp in all_platforms:
+                    if _wp.rect.height > _wp.rect.width:   # Dikey (duvar) platform
+                        if _wall_rect.colliderect(_wp.rect):
+                            if old_x + PLAYER_W <= _wp.rect.left + 6:
+                                player_x = float(_wp.rect.left - PLAYER_W)
+                            elif old_x >= _wp.rect.right - 6:
+                                player_x = float(_wp.rect.right)
+
             for npc in npcs:
                 npc.update(player_x, player_y, dt)
 
@@ -1545,10 +2080,12 @@ def run_game_loop():
                     boss_obj.x = target_x
                     boss_obj.rect.x = int(boss_obj.x)
 
-            if GAME_STATE == 'PLAYING' and lvl_config.get('type') != 'rest_area':
+            if GAME_STATE == 'PLAYING' and lvl_config.get('type') not in ('rest_area', 'beat_arena', 'manor_stealth'):
                 base_goal = EASY_MODE_LEVELS.get(current_level_idx, EASY_MODE_LEVELS[1])['goal_score']
                 lvl_goal = base_goal * 0.75
-                if current_level_idx < 30 and score >= lvl_goal:
+                # goal_score=0 olan bölümleri de standart kontrolden dışla
+                # (Skor=0 → eşik=0 → ilk karede True → anlık kazanma hatası)
+                if current_level_idx < 30 and lvl_goal > 0 and score >= lvl_goal:
                     if enemies_killed_current_level == 0:
                         save_manager.update_karma(50)
                         karma_notification_text = "PASİFİST BONUSU! (+50 KARMA)"
@@ -1599,7 +2136,7 @@ def run_game_loop():
                 if trail.life <= 0:
                     trail_effects.remove(trail)
 
-            if lvl_config.get('type') != 'rest_area' and current_level_idx != 99:
+            if lvl_config.get('type') not in ('rest_area', 'beat_arena') and current_level_idx != 99:
                 if current_level_idx <= 30:
                     if len(all_platforms) > 0 and max(p.rect.right for p in all_platforms) < LOGICAL_WIDTH + 100:
                         add_new_platform()
@@ -1613,6 +2150,10 @@ def run_game_loop():
                 elif current_level_idx == 99:
                     player_y = LOGICAL_HEIGHT - 300
                     player_x = 100
+                    y_velocity = 0
+                elif lvl_config.get('type') == 'beat_arena':
+                    # Arena zemininde yere gömme — sadece pozisyonu düzelt
+                    player_y = LOGICAL_HEIGHT - 150
                     y_velocity = 0
                 else:
                     GAME_STATE = 'GAME_OVER'
@@ -1629,12 +2170,18 @@ def run_game_loop():
                         start_npc_conversation(npcs[0])
                 elif current_level_idx == 99:
                     player_x = 50
+                elif lvl_config.get('type') == 'beat_arena':
+                    player_x = 50   # Arena sınırı — soldan çıkış yok
                 else:
                     GAME_STATE = 'GAME_OVER'
                     high_score = max(high_score, int(score))
                     save_manager.update_high_score('easy_mode', current_level_idx, score)
                     audio_manager.stop_music()
                     all_vfx.add(ParticleExplosion(player_x, player_y, (255, 0, 0), 30))
+            
+            # Arena sağ sınırı
+            if lvl_config.get('type') == 'beat_arena' and player_x > LOGICAL_WIDTH - 50:
+                player_x = LOGICAL_WIDTH - 50
 
             rest_area_manager.update((player_x, player_y))
 
@@ -1671,7 +2218,14 @@ def run_game_loop():
             'term_input': terminal_input,
             'term_status': terminal_status,
             'level_select_page': level_select_page,
-            'has_talisman': has_talisman
+            'has_talisman': has_talisman,
+            # --- DÖVÜŞ SİSTEMİ ---
+            'beat_arena_active': beat_arena.active,
+            'arena_wave':  beat_arena.current_wave,
+            'arena_total': beat_arena.total_waves,
+            'combo_info':  combo_system.get_hud_info(),
+            'player_hp':   player_hp.current_hp,
+            'player_hp_max': player_hp.max_hp,
         }
 
         if GAME_STATE in ['MENU', 'SETTINGS', 'LOADING', 'LEVEL_SELECT', 'ENDLESS_SELECT', 'TERMINAL']:
@@ -1716,6 +2270,19 @@ def run_game_loop():
                 global_offset[1] + int(anim_offset[1])
             )
 
+            # ── Malikane kamera ofseti — platformları ve düşmanları kaydır ──
+            # manor_stealth bölümünde tüm dünya nesneleri manor_camera_offset_x/y
+            # kadar kaydırılarak çizilir; oyuncu ise ekran ortasında sabit görünür.
+            _manor_draw_ox = -manor_camera_offset_x  # platform blit ofseti (negatif = sola kaydır)
+            _manor_draw_oy = -manor_camera_offset_y  # dikey ofset (negatif = yukarı kaydır)
+            _manor_render_offset = (
+                render_offset[0] + _manor_draw_ox,
+                render_offset[1] + _manor_draw_oy
+            )
+
+            # Render pipeline boyunca güvenli erişim için lvl_config garantisi
+            lvl_config = EASY_MODE_LEVELS.get(current_level_idx, EASY_MODE_LEVELS[1])
+
             # ── 1. Ekranı temizle ────────────────────────────────────────
             if reality_shifter.current_reality != 0:
                 reality_effect = reality_shifter.get_visual_effect()
@@ -1744,12 +2311,43 @@ def run_game_loop():
 
             # ── 5. Platformlar ───────────────────────────────────────────
             for p in all_platforms:
+                # Malikane bölümünde kamera oyuncuyu 2D takip eder;
+                # platformlar X ve Y ofseti uygulanarak çizilir.
+                _p_draw_rect = p.rect.move(_manor_draw_ox, _manor_draw_oy)
+                _old_rect = p.rect
+                p.rect = _p_draw_rect
                 p.draw(game_canvas, CURRENT_THEME)
+                p.rect = _old_rect
 
             # ── 6. Düşmanlar / Boss ──────────────────────────────────────
             boss_manager_system.draw(game_canvas)
             for e in all_enemies:
-                e.draw(game_canvas, theme=CURRENT_THEME)
+                # Malikane kamera ofseti (X ve Y) uygulanır
+                if (_manor_draw_ox != 0 or _manor_draw_oy != 0) and hasattr(e, 'rect'):
+                    _e_ox, _e_oy = e.rect.x, e.rect.y
+                    e.rect.x += _manor_draw_ox
+                    e.rect.y += _manor_draw_oy
+                    e.draw(game_canvas, theme=CURRENT_THEME)
+                    e.rect.x = _e_ox
+                    e.rect.y = _e_oy
+                else:
+                    e.draw(game_canvas, theme=CURRENT_THEME)
+
+            # ── 6b. Beat Arena Düşmanları + HUD ──────────────────────────
+            if lvl_config.get('type') == 'beat_arena':
+                beat_arena.draw(game_canvas)
+
+            # ── Kombo sistemi hitbox (her bölümde) ───────────────────────
+            combo_system.draw(vfx_surface)
+
+            # ── Combat HUD (her bölümde) — can çubuğu + kombo zinciri ───
+            # Can çubuğu: sadece arena bölümlerinde (normal bölümlerde anlık ölüm var)
+            if lvl_config.get('type') == 'beat_arena':
+                player_hp.draw_hud(game_canvas, 20, 20)
+            # Kombo zinciri her bölümde görünür
+            hud_info = combo_system.get_hud_info()
+            if hud_info.get('chain') or hud_info.get('last_combo'):
+                combat_hud.draw(game_canvas, hud_info)
 
             # VFX partikülleri ve trail'leri ayrı yüzeye çiz
             for v in all_vfx:
@@ -1760,6 +2358,9 @@ def run_game_loop():
             # ── 7. NPC'ler ───────────────────────────────────────────────
             for npc in npcs:
                 npc.draw(game_canvas, render_offset)
+
+            # ── 7b. Gizlilik katmanı (kameralar, vizyon konileri, şüphe HUD) ──
+            stealth_system.draw(game_canvas, camera_offset=(_manor_draw_ox, _manor_draw_oy))
 
             # ── 8. OYUNCU ────────────────────────────────────────────────
             if GAME_STATE in ('PLAYING', 'PAUSED', 'GAME_OVER', 'LEVEL_COMPLETE',
@@ -1795,8 +2396,8 @@ def run_game_loop():
                     dt, character_state, player_direction
                 )
 
-                _px = int(player_x) + render_offset[0]
-                _py = int(player_y) + render_offset[1]
+                _px = int(player_x) + render_offset[0] + _manor_draw_ox
+                _py = int(player_y) + render_offset[1] + _manor_draw_oy
 
                 # ── DEBUG: print + sheet görselleştirme ──────────────────
                 if DEBUG_SPRITE:
@@ -2141,6 +2742,39 @@ def run_game_loop():
                         text_surf = font.render(instruction, True, (200, 255, 200))
                         game_canvas.blit(text_surf, (40, y_offset))
                         y_offset += 25
+                elif lvl_config.get('type') == 'beat_arena':
+                    font = pygame.font.Font(None, 24)
+                    instructions = [
+                        "J: Hafif Vuruş    K: Ağır Vuruş",
+                        "WASD: Hareket / Zıplama",
+                        "Kombo: J+J+J / J+J+K / H+H ...",
+                        "Tüm dalgaları temizle → Bölüm geçer"
+                    ]
+                    y_offset = LOGICAL_HEIGHT - 105
+                    for instruction in instructions:
+                        text_surf = font.render(instruction, True, (255, 200, 100))
+                        game_canvas.blit(text_surf, (40, y_offset))
+                        y_offset += 25
+                elif lvl_config.get('type') == 'manor_stealth':
+                    # Malikane özel HUD: suikast ipucu + aktif muhafız sayacı
+                    _mfont = pygame.font.Font(None, 24)
+                    _guard_count = stealth_system.active_guard_count()
+                    _manor_hints = [
+                        "F: Sessiz Suikast (Arkadan, Şüphe < %50)",
+                        "WASD: Hareket   SPACE: Dash",
+                        f"Aktif Muhafız: {_guard_count}",
+                        "Hedef: Gizli Kasaya Ulaş →",
+                    ]
+                    _mhud_y = LOGICAL_HEIGHT - 100
+                    for _mh in _manor_hints:
+                        _mh_surf = _mfont.render(_mh, True, (200, 150, 80))
+                        game_canvas.blit(_mh_surf, (40, _mhud_y))
+                        _mhud_y += 24
+                else:
+                    # Normal bölümlerde köşede kısa ipucu
+                    _hint_font = pygame.font.Font(None, 22)
+                    _hint = _hint_font.render("J: Hafif  K: Ağır  SPACE: Dash  S↓: Slam", True, (180, 180, 180))
+                    game_canvas.blit(_hint, (LOGICAL_WIDTH - _hint.get_width() - 12, LOGICAL_HEIGHT - 30))
 
             # Yakındaki NPC ekosistemi figürleri
             for npc in npc_ecosystem:
