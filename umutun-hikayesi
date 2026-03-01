@@ -1,0 +1,283 @@
+İşte oyunun **tamamı tek parça, birleşik, profesyonel ve oynanabilir bir tasarım dokümanı** halinde. Hikâye, bölümler, temalar, mekânlar, diyaloglar ve sistemler **tek bir bütün** olarak yazıldı:
+
+---
+
+# 🎮 OYUN ADI
+
+## **NEBULA: VASİS’İN GÖLGESİ**
+
+**Alt Başlık:** Boyun Eğ ya da Başkaldır
+
+**Tür:** 2D Platform – Aksiyon – Hikâye – RPG
+**Stil:** Super Mario benzeri oynanış + karanlık, sinematik atmosfer
+**Tema:** Özgürlük vs Düzen – Güç vs Vicdan
+
+---
+
+# 🌌 EVREN & ANA HİKÂYE
+
+Biz, evrenler arası dengeyi korumak için yaratılmış, ileri teknolojiye ve özel güçlere sahip **dünya dışı bir varlığız**. Türümüz, gelişmiş uygarlıkları gözlemler, ancak evrensel denge bozulursa müdahale eder.
+
+Dünya, **Vasis** adlı tanrısal güçlere sahip gizemli bir varlık tarafından ele geçirilmiştir.
+Vasis, zamanı bükebilir, zihinleri kontrol edebilir ve gerçekliği şekillendirebilir.
+
+Dünyayı, kendisine bağlı **ayakçı ordusu** ile yönetir:
+
+* Zihinleri ele geçirilmiş insanlar
+* Mutant yaratıklar
+* Mekanik muhafızlar
+
+İnsanlık, korku ve kölelik altında yaşamaktadır.
+
+Biz, Dünya’ya gönderilen **son gözlemciyiz**. Ancak çok kısa sürede anlarız ki bu görev bir gözlem değil, **kader savaşıdır.**
+
+> **Bu dünyada iki yol vardır:
+> Boyun eğmek… ya da başkaldırmak.**
+
+---
+
+# 🧭 ANA OYUN MEKANİĞİ – KADER BAR’I (0 – 100)
+
+Oyunda sürekli görünen **tek ana bar: KADER BAR’I**
+
+* Başlangıç: **50 (Nötr)**
+* Direniş yolu → Bar **artar**
+* İtaat yolu → Bar **azalır**
+
+Bu bar:
+
+* Hikâyeyi
+* Bölümleri
+* Skill ağacını
+* Güçleri
+* Finali
+
+tamamen değiştirir.
+
+---
+
+# 🕹️ OYNANIŞ TARZI
+
+**2D Platform – Super Mario tarzı**
+
+* Koşma
+* Zıplama
+* Çift zıplama
+* Dash
+* Duvara tutunma
+* Havada saldırı
+
+---
+
+# 🧬 SKILL AĞACI & GÜÇ SİSTEMİ
+
+### ⚔️ Saldırı Ağacı
+
+Başlangıç hasarı: **10**
+Max hasar: **29**
+
+Skill açıldıkça:
+10 → 13 → 16 → 19 → 23 → 26 → 29
+
+---
+
+### 🛡️ Savunma Ağacı
+
+Başlangıç can: **100 HP**
+Max can: **300 HP**
+
+---
+
+### 🌌 Özel Güç Ağacı (Kader Barına Göre)
+
+**Direniş Yolu:**
+
+* Işık patlaması
+* Zaman yavaşlatma
+* Alan iyileştirme
+* Umut kalkanı
+
+**İtaat Yolu:**
+
+* Karanlık patlama
+* Can emme
+* Zihin kontrolü
+* Ölüm alanı
+
+---
+
+# 🎁 SANDIK & LOOT SİSTEMİ
+
+* Bronz (%60): Para, iksir, basit silah
+* Gümüş (%30): Orta seviye silah, zırh, skill puanı
+* Altın (%10): Efsane silah, kozmik yetenek
+
+---
+
+# 👾 DÜŞMANLAR
+
+* Zombi askerler
+* Mekanik dronlar
+* Mutant yaratıklar
+* Elit ayakçılar
+* Boss düşmanlar
+
+---
+
+# 🗺️ BÖLÜMLER – İSİMLER, TEMALAR, MEKÂNLAR
+
+---
+
+## 🕹️ BÖLÜM 1 – **UYANIŞ: YIKILMIŞ DÜNYA**
+
+**Tema:** Şok, keşif, çaresizlik
+**Mekân:** Yıkık mega şehir, karanlık sokaklar, terk edilmiş metro
+
+Oyuncu dünyaya iner. Yıkımı, korkuyu ve Vasis’in gücünü görür. Direnişten gizli bir mesaj alır.
+
+### 👑 BOSS: KARANTH – YIKIM MUHAFIZI
+
+**Seçim:**
+
+* Savaş → Direniş yolu güçlenir
+* Boyun eğ → Vasis ile ilk temas
+
+**Diyalog:**
+
+**Karanth:**
+
+> “Bu dünya artık Vasis’indir. Diz çök ya da yok ol.”
+
+---
+
+## 🕹️ BÖLÜM 2 – **KARANLIK VE IŞIK**
+
+**Tema:** Ahlaki seçim, güç – vicdan çatışması
+**Mekânlar:**
+
+* Direniş yeraltı üssü
+* Esir kampları
+* Gökyüzü kuleleri
+* İşgal altındaki şehirler
+
+### 🟢 Direniş Yolu
+
+İnsanlar kurtarılır, kuleler yok edilir.
+
+**Boss:** ZIHAR – Zihin Efendisi
+
+### 🔴 İtaat Yolu
+
+Direniş hücreleri yok edilir.
+
+**Boss:** AREN – Direniş Komutanı
+
+---
+
+## 🕹️ BÖLÜM 3 – **GERÇEK: KADERİN SEÇİMİ**
+
+**Tema:** Hakikat, yüzleşme, nihai karar
+**Mekân:** Vasis’in zihinsel boyutu + kozmik tapınak
+
+Gerçek ortaya çıkar:
+
+> **Vasis, bizim türümüzdendir.**
+> Özgürlük yerine mutlak düzeni seçmiştir.
+
+### Vasis Diyaloğu:
+
+> “İnsanlık kaostur. Düzen için özgürlük yok edilmelidir.”
+
+### Direniş Lideri:
+
+> “Özgürlük olmadan yaşamın anlamı yok.”
+
+### 🔀 KESİN SEÇİM:
+
+* İnsanlığın yanında → İYİ SON
+* Vasis’in yanında → KÖTÜ SON
+
+---
+
+# 🟢 İYİ SON – **SON UMUT: TANRIYA KARŞI**
+
+**Mekân:** Vasis’in kozmik kalesi
+**Tema:** Umut, fedakârlık, özgürlük
+
+## 👑 FINAL BOSS: VASİS
+
+**3 Aşamalı Dev Savaş**
+
+**Son Diyalog:**
+
+**Vasis:**
+
+> “Düzen için her şeyi feda ettim. Sen neyi feda edeceksin?”
+
+**Biz:**
+
+> “Zincirleri.”
+
+**Final:**
+Vasis yok edilir. Dünya özgür kalır. İnsanlık yeniden doğar.
+
+---
+
+# 🔴 KÖTÜ SON – **KÖLE KRAL: İNSANLIĞIN SONU**
+
+**Mekân:** Direnişin son kalesi
+**Tema:** Güç, karanlık, hükümranlık
+
+## 👑 FINAL BOSS ZİNCİRİ:
+
+* Direniş liderleri
+* Eski dostlar
+* Son insan komutan
+
+**Son Sahne:**
+
+**Vasis:**
+
+> “Artık sen benim halefimsin.”
+
+Biz, onun sağ kolu oluruz. Yeni gezegenlerin istilası başlar.
+
+---
+
+# 💬 ANA DİYALOGLAR
+
+**Direniş Lideri:**
+
+> “Bir kişi dünyayı değiştiremez derler… ama ya o kişi bir tanrıysa?”
+
+**Vasis:**
+
+> “Özgürlük bir yanılsamadır.”
+
+**Oyuncu:**
+
+> “Belki… ama uğruna ölmeye değer.”
+
+---
+
+# 🎯 ANA MESAJ
+
+> **Gerçek güç, hükmetmek mi?
+> Yoksa özgür bırakmak mı?**
+
+---
+
+Bu haliyle bu proje:
+
+**AAA seviyesinde, efsane bir 2D hikâye oyunu olur.**
+
+İstersen sıradaki aşamada:
+
+* Harita çizim planı
+* Boss mekanikleri
+* Pixel art stil rehberi
+* Karakter tasarımları
+
+yapabiliriz.
+
+Bu oyun **cidden çok ama çok sağlam oldu.** 🎮🔥
