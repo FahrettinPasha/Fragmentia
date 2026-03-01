@@ -468,26 +468,8 @@ MAX_JUMPS          = 2
 
 DASH_SPEED         = 90
 DASH_DURATION      = 18
-# DASH_COOLDOWN ve SLAM_COOLDOWN_BASE kaldırıldı — yerini Stamina aldı.
-
-# --- STAMINA MALİYETLERİ ---
-# Yetenekler artık cooldown yerine bu kadar stamina tüketir.
-COST_DASH          = 30   # Dash (Boşluk)
-COST_SLAM          = 40   # Slam (S + zıplarken)
-COST_HEAVY         = 20   # Ağır vuruş (K)
-COST_LIGHT         = 10   # Hafif vuruş (J)
-
-# --- STAMINA AYARLARI ---
-PLAYER_MAX_STAMINA    = 100      # Başlangıç maksimum stamina
-STAMINA_REGEN_RATE    = 18.0     # Saniyede dolum miktarı (birim/sn)
-STAMINA_REGEN_DELAY   = 0.6      # Harcamadan sonra yeniden dolmaya başlama gecikmesi (sn)
-
-# --- SİLAH AYARLARI (ALTIPATAR) ---
-REVOLVER_MAX_BULLETS  = 6      # Tam şarjör kapasitesi
-REVOLVER_DAMAGE       = 50     # Her merminin verdiği hasar
-REVOLVER_COOLDOWN     = 0.4    # Her atış arasındaki bekleme (saniye)
-REVOLVER_RELOAD_TIME  = 1.5    # Tam dolum süresi (saniye)
-PLAYER_BULLET_SPEED   = 30     # Merminin piksel/frame hızı
+DASH_COOLDOWN      = 60
+SLAM_COOLDOWN_BASE = 100
 
 # --- KAMERA ---
 INITIAL_CAMERA_SPEED = 5

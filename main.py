@@ -1,5 +1,5 @@
 # main.py
-from entities import BlankBackground, ParallaxBackground, Platform, Star, CursedEnemy, NPC, DroneEnemy, TankEnemy, HealthOrb
+from entities import BlankBackground, ParallaxBackground, Platform, Star, CursedEnemy, NPC, DroneEnemy, TankEnemy
 from boss_entities import VasilCompanion, BossSpike, BossLightning
 from boss_manager import BossManager
 import pygame
@@ -21,10 +21,6 @@ from settings import STEALTH_KILL_REACH_PX, STEALTH_KILL_KARMA
 # --- MODÜLER YAPI IMPORTLARI ---
 from game_config import EASY_MODE_LEVELS, BULLET_SPEED, BOSS_HEALTH, BOSS_DAMAGE, BOSS_FIRE_RATE, BOSS_INVULNERABILITY_TIME
 from game_config import LIMBO_VASIL_PROMPT, LIMBO_ARES_PROMPT, CURSED_PURPLE, GLITCH_BLACK, CURSED_RED
-from settings import (COST_DASH, COST_SLAM, COST_HEAVY, COST_LIGHT,
-                      PLAYER_MAX_STAMINA, STAMINA_REGEN_RATE, STAMINA_REGEN_DELAY,
-                      REVOLVER_MAX_BULLETS, REVOLVER_DAMAGE, REVOLVER_COOLDOWN,
-                      REVOLVER_RELOAD_TIME, PLAYER_BULLET_SPEED)
 from auxiliary_systems import RestAreaManager, NexusHub, PhilosophicalCore, RealityShiftSystem, TimeLayerSystem
 from auxiliary_systems import CombatPhilosophySystem, LivingSoundtrack, EndlessFragmentia, ReactiveFragmentia, LivingNPC
 from auxiliary_systems import FragmentiaDistrict, PhilosophicalTitan, WarpLine
@@ -36,7 +32,7 @@ from local_bosses import NexusBoss, AresBoss, VasilBoss, EnemyBullet
 from utils import generate_sound_effect, generate_ambient_fallback, generate_calm_ambient, load_sound_asset, draw_text, draw_animated_player, wrap_text, draw_text_with_shadow, get_silent_sound, audio_manager
 from vfx import LightningBolt, FlameSpark, GhostTrail, SpeedLine, Shockwave, EnergyOrb, ParticleExplosion, ScreenFlash, SavedSoul
 # YENİ: ParallaxBackground eklendi (BlankBackground yerine)
-from entities import BlankBackground, ParallaxBackground, Platform, Star, CursedEnemy, NPC, DroneEnemy, TankEnemy, HealthOrb, PlayerProjectile
+from entities import BlankBackground, ParallaxBackground, Platform, Star, CursedEnemy, NPC, DroneEnemy, TankEnemy
 from ui_system import render_ui
 from animations import CharacterAnimator, TrailEffect
 from save_system import SaveManager
@@ -102,8 +98,6 @@ vfx_surface = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT), pygame.SRCALPHA)
 DASH_SOUND = load_sound_asset("assets/sfx/dash.wav")
 SLAM_SOUND = load_sound_asset("assets/sfx/slam.wav")
 EXPLOSION_SOUND = get_silent_sound()
-GUN_SHOT_SOUND = load_sound_asset("assets/sfx/gun_shot.wav")
-RELOAD_SOUND   = load_sound_asset("assets/sfx/reload.wav")
 
 current_level_music = None
 # --- OPTİMİZASYON 3: VFX Limiti Azaltıldı ---
@@ -175,8 +169,10 @@ player_x, player_y = 150.0, float(LOGICAL_HEIGHT - 300)
 y_velocity = 0.0
 is_jumping = is_dashing = is_slamming = False
 slam_stall_timer = 0
+slam_cooldown = 0
 jumps_left = MAX_JUMPS
 dash_timer = 0
+dash_cooldown_timer = 0
 screen_shake = 0
 dash_particles_timer = 0
 dash_angle = 0.0
@@ -186,6 +182,8 @@ slam_collision_check_frames = 0
 active_damage_waves = []
 
 active_player_speed = PLAYER_SPEED
+active_dash_cd = DASH_COOLDOWN
+active_slam_cd = SLAM_COOLDOWN_BASE
 has_revived_this_run = False
 has_talisman = False
 
@@ -203,8 +201,6 @@ TRAIL_INTERVAL = 3
 all_platforms = pygame.sprite.Group()
 all_enemies = pygame.sprite.Group()
 all_vfx = pygame.sprite.Group()
-all_health_orbs = pygame.sprite.Group()  # Can küreleri
-all_player_projectiles = pygame.sprite.Group()  # Oyuncu mermileri (altıpatar)
 stars = [Star(LOGICAL_WIDTH, LOGICAL_HEIGHT) for _ in range(120)]
 
 npcs = []
@@ -484,21 +480,18 @@ def start_npc_conversation(npc):
 
 def init_game():
     global player_x, player_y, y_velocity, score, camera_speed, jumps_left
-    global is_jumping, is_dashing, is_slamming, dash_timer, slam_stall_timer
+    global is_jumping, is_dashing, is_slamming, dash_timer, dash_cooldown_timer, slam_stall_timer, slam_cooldown
     global CURRENT_THEME, CURRENT_SHAPE, screen_shake, dash_particles_timer, dash_angle, dash_frame_counter
     global character_state, trail_effects, last_trail_time, slam_collision_check_frames, active_damage_waves
     global CURRENT_THEME, current_level_music, npcs, current_npc, npc_conversation_active
     global player_karma, enemies_killed_current_level, karma_notification_timer, karma_notification_text
-    global active_player_speed
+    global active_player_speed, active_dash_cd, active_slam_cd
     global has_revived_this_run, has_talisman
     global boss_manager_system, vasil_companion
     global level_15_timer, finisher_active, finisher_state_timer, finisher_type, level_15_cutscene_played
     global active_background # Global active_background
     global cached_ui_surface, last_score # UI Cache
     global combo_system, beat_arena, player_hp
-    global all_health_orbs
-    global all_player_projectiles
-    global player_bullets, gun_cooldown, is_reloading
 
     # --- OPTİMİZASYON: Oyun sırasında GC'yi kapat ---
     gc.disable()
@@ -542,14 +535,13 @@ def init_game():
         has_revived_this_run = False
 
     active_player_speed = PLAYER_SPEED
+    active_dash_cd = DASH_COOLDOWN
+    active_slam_cd = SLAM_COOLDOWN_BASE
     boss_manager_system.reset()
     # --- DÖVÜŞ SİSTEMİ SIFIRLA ---
     combo_system.reset()
     beat_arena.reset()
-    player_hp = PlayerHealth(ARENA_PLAYER_HP,
-                             max_stamina=PLAYER_MAX_STAMINA,
-                             stamina_regen=STAMINA_REGEN_RATE)
-    all_health_orbs.empty()
+    player_hp = PlayerHealth(ARENA_PLAYER_HP)
     npcs.clear()
     current_npc = None
     npc_conversation_active = False
@@ -751,7 +743,7 @@ def init_game():
                 e.max_health = 50000
                 e.health = 50000
 
-    y_velocity = score = dash_timer = screen_shake = slam_stall_timer = 0
+    y_velocity = score = dash_timer = dash_cooldown_timer = screen_shake = slam_stall_timer = slam_cooldown = 0
     is_jumping = is_dashing = is_slamming = False
     jumps_left = MAX_JUMPS
     dash_particles_timer = 0
@@ -769,12 +761,6 @@ def init_game():
     all_enemies.empty()
     all_vfx.empty()
     character_animator.__init__()
-
-    # ── Altıpatar sıfırlama ───────────────────────────────────────────────
-    player_bullets  = REVOLVER_MAX_BULLETS   # Tam şarjör ile başla
-    gun_cooldown    = 0.0                    # Atış bekleme süresi
-    is_reloading    = False                  # Şarjör doldurma bayrağı
-    all_player_projectiles.empty()           # Önceki mermileri temizle
 
     # --- GİZLİLİK SİSTEMİ: Bölüm düzenini yükle ---
     stealth_system.setup_level(current_level_idx)
@@ -795,7 +781,7 @@ def run_game_loop():
     dragging_slider = None
     global GAME_STATE, loading_timer, loading_logs, loading_stage, target_state_after_load
     global score, camera_speed, player_x, player_y, y_velocity, is_jumping, is_dashing, is_slamming
-    global slam_stall_timer, jumps_left, dash_timer
+    global slam_stall_timer, slam_cooldown, jumps_left, dash_timer, dash_cooldown_timer
     global screen_shake, character_state, current_level_idx, high_score
     global dash_vx, dash_vy, dash_particles_timer, dash_angle, dash_frame_counter
     global slam_collision_check_frames, active_damage_waves, trail_effects, last_trail_time
@@ -804,7 +790,7 @@ def run_game_loop():
     global npc_show_cursor, npc_cursor_timer, npc_typing_timer, npcs
     global active_ui_elements
     global player_karma, enemies_killed_current_level, karma_notification_timer, karma_notification_text
-    global active_player_speed
+    global active_player_speed, active_dash_cd, active_slam_cd
     global has_revived_this_run, has_talisman
     global level_select_page, vasil_companion
     global boss_manager_system
@@ -813,7 +799,6 @@ def run_game_loop():
     global active_background
     global cached_ui_surface, last_score, last_active_ui_elements
     global combo_system, beat_arena, player_hp, combat_hud
-    global player_bullets, gun_cooldown, is_reloading, all_player_projectiles
 
     is_super_mode = False
     # Malikane bölümü için kamera X ve Y ofseti (oyuncuyu ekranın ortasında tutar)
@@ -868,13 +853,6 @@ def run_game_loop():
     frame_count = 0
     current_level_idx = 15
 
-    # ── Altıpatar başlangıç değerleri ─────────────────────────────────────
-    # init_game() bunları her bölüm başında sıfırlar.
-    # Burada sadece run_game_loop'un ilk çalışması için güvenli başlangıç.
-    player_bullets = REVOLVER_MAX_BULLETS
-    gun_cooldown   = 0.0
-    is_reloading   = False
-
     CURRENT_THEME = THEMES[0]
     CURRENT_SHAPE = 'circle'
     score = 0.0
@@ -884,7 +862,7 @@ def run_game_loop():
     y_velocity = 0.0
     is_jumping = is_dashing = is_slamming = False
     jumps_left = MAX_JUMPS
-    dash_timer = 0
+    dash_timer = dash_cooldown_timer = 0
     screen_shake = 0
     dash_particles_timer = 0
     dash_angle = 0.0
@@ -1140,20 +1118,18 @@ def run_game_loop():
                     px_c = int(player_x + 15)
                     py_c = int(player_y + 15)
                     if event.key == pygame.K_j:   # Hafif vuruş
-                        if player_hp.consume_stamina(COST_LIGHT):
-                            combo_system.input_light(player_x, player_y, player_direction)
-                            all_vfx.add(ParticleExplosion(
-                                px_c + player_direction * 40, py_c,
-                                (255, 150, 50), 8
-                            ))
+                        combo_system.input_light(player_x, player_y, player_direction)
+                        all_vfx.add(ParticleExplosion(
+                            px_c + player_direction * 40, py_c,
+                            (255, 150, 50), 8
+                        ))
                     elif event.key == pygame.K_k:  # Ağır vuruş
-                        if player_hp.consume_stamina(COST_HEAVY):
-                            combo_system.input_heavy(player_x, player_y, player_direction)
-                            all_vfx.add(Shockwave(
-                                px_c + player_direction * 50, py_c,
-                                CURSED_RED, max_radius=60, speed=12
-                            ))
-                            screen_shake = 6
+                        combo_system.input_heavy(player_x, player_y, player_direction)
+                        all_vfx.add(Shockwave(
+                            px_c + player_direction * 50, py_c,
+                            CURSED_RED, max_radius=60, speed=12
+                        ))
+                        screen_shake = 6
 
                 elif GAME_STATE == 'TERMINAL':
                     if event.key == pygame.K_RETURN:
@@ -1201,10 +1177,6 @@ def run_game_loop():
                 if GAME_STATE == 'PLAYING' and event.key == pygame.K_t:
                     lvl_config = EASY_MODE_LEVELS.get(current_level_idx, EASY_MODE_LEVELS[1])
                     if lvl_config.get('type') == 'rest_area':
-                        # Dinlenme alanından ayrılırken canı tam doldur (Bonfire)
-                        player_hp.heal(player_hp.max_hp)
-                        karma_notification_text  = "DİNLENDİN! CAN DOLDU"
-                        karma_notification_timer = 60
                         next_level = current_level_idx + 1
                         if next_level in EASY_MODE_LEVELS:
                             current_level_idx = next_level
@@ -1226,9 +1198,10 @@ def run_game_loop():
                                                     py + random.randint(-10, 10),
                                                     CURRENT_THEME["border_color"], 4, 15))
 
-                    if event.key == pygame.K_s and is_jumping and not is_dashing and not is_slamming and player_hp.consume_stamina(COST_SLAM):
+                    if event.key == pygame.K_s and is_jumping and not is_dashing and not is_slamming and slam_cooldown <= 0:
                         is_slamming = True
                         slam_stall_timer = 15
+                        slam_cooldown = active_slam_cd
                         y_velocity = 0
                         character_state = 'slamming'
                         slam_collision_check_frames = 0
@@ -1242,9 +1215,13 @@ def run_game_loop():
                                                         py + random.randint(-60, 60),
                                                         PLAYER_SLAM, 12))
 
-                    # ── F TUŞU: SESSİZ SUİKAST (stealth) / ATEŞ ET (diğerleri) ──
-                    # manor_stealth → sessiz suikast mantığı.
-                    # Diğer bölümler → altıpatar ateşleme.
+                    # ── F TUŞU: SESSİZ SUİKAST ────────────────────────────────────
+                    # Sadece manor_stealth bölümlerinde aktif.
+                    # stealth_system.try_stealth_kill() iki şartı kontrol eder:
+                    #   1) Muhafızın suspicion < 0.5 (seni fark etmemiş)
+                    #   2) Oyuncu muhafızın ARKASINDA (facing yönüne ters taraf)
+                    # Başarılıysa: muhafız anında deaktive, karma +1, yeşil VFX
+                    # Başarısızsa: ekrana kısa hata bildirimi (kırmızı metin)
                     if event.key == pygame.K_f:
                         _manor_lvl = EASY_MODE_LEVELS.get(current_level_idx, {})
                         if _manor_lvl.get('type') == 'manor_stealth':
@@ -1277,43 +1254,12 @@ def run_game_loop():
                                 karma_notification_text  = f"SUİKAST BAŞARISIZ: {_reason}"
                                 karma_notification_timer = 60
 
-                        else:
-                            # ── ALTIPATAR: ATEŞ ET ───────────────────────────────
-                            if gun_cooldown <= 0 and player_bullets > 0 and not is_reloading:
-                                player_bullets -= 1
-                                gun_cooldown    = REVOLVER_COOLDOWN
-                                # Mermiyi oyuncunun tam önünden ateşle
-                                _px_proj = player_x + 15 + player_direction * 14
-                                _py_proj = player_y + 18
-                                proj = PlayerProjectile(_px_proj, _py_proj, player_direction)
-                                all_player_projectiles.add(proj)
-                                # Ateş etme sesi
-                                if GUN_SHOT_SOUND:
-                                    audio_manager.play_sfx(GUN_SHOT_SOUND)
-                                # Namlu ucu VFX
-                                all_vfx.add(ParticleExplosion(
-                                    int(_px_proj + player_direction * 8), int(_py_proj),
-                                    (255, 220, 80), 5
-                                ))
-                                screen_shake = max(screen_shake, 2)
-
-                    # ── R TUŞU: ŞARJÖR DOLDUR ─────────────────────────────────────
-                    if event.key == pygame.K_r and GAME_STATE == 'PLAYING':
-                        _manor_r = EASY_MODE_LEVELS.get(current_level_idx, {})
-                        if _manor_r.get('type') != 'manor_stealth':
-                            if not is_reloading and player_bullets < REVOLVER_MAX_BULLETS:
-                                is_reloading  = True
-                                gun_cooldown  = REVOLVER_RELOAD_TIME
-                                if RELOAD_SOUND:
-                                    audio_manager.play_sfx(RELOAD_SOUND)
-                                karma_notification_text  = "ŞARJÖR DOLUYOR..."
-                                karma_notification_timer = 40
-
-                    if event.key == pygame.K_SPACE and player_hp.consume_stamina(COST_DASH) and not is_dashing:
+                    if event.key == pygame.K_SPACE and dash_cooldown_timer <= 0 and not is_dashing:
                         is_dashing = True
                         # Malikane bölümünde dash mesafesi kısaltılır (kaçış adımı)
                         _manor_dash_cfg = EASY_MODE_LEVELS.get(current_level_idx, {})
                         dash_timer = (DASH_DURATION // 3) if _manor_dash_cfg.get('type') == 'manor_stealth' else DASH_DURATION
+                        dash_cooldown_timer = active_dash_cd
                         screen_shake = 8
                         dash_particles_timer = 0
                         dash_frame_counter = 0.0
@@ -1364,35 +1310,30 @@ def run_game_loop():
             if buff_stacks > 2:
                 buff_stacks = 2
             base_speed_mult = 1.0 + (0.25 * buff_stacks)
+            base_cd_mult = 0.5 ** buff_stacks
+            karma_bonus = 0.0
+            if abs(current_karma) >= 100:
+                karma_speed_bonus = 0.25
+                karma_cd_reduction = 0.25
+                base_speed_mult += karma_speed_bonus
+                base_cd_mult -= karma_cd_reduction
             active_player_speed = PLAYER_SPEED * base_speed_mult
-
-            # ── Karma Stamina Buff'ı ──────────────────────────────────────
-            # Karma ±100'ü geçince stamina dolum hızı ve maksimum stamina artar.
-            # Böylece iyi/kötü yolda kararlı oyuncular daha seri kombolar yapar.
-            _karma_abs = abs(current_karma)
-            if _karma_abs >= 100:
-                player_hp.stamina_regen = STAMINA_REGEN_RATE * 1.5   # %50 daha hızlı regen
-                player_hp.max_stamina   = int(PLAYER_MAX_STAMINA * 1.25)  # %25 daha fazla stamina
-            elif _karma_abs >= 50:
-                player_hp.stamina_regen = STAMINA_REGEN_RATE * 1.25
-                player_hp.max_stamina   = PLAYER_MAX_STAMINA
-            else:
-                player_hp.stamina_regen = STAMINA_REGEN_RATE
-                player_hp.max_stamina   = PLAYER_MAX_STAMINA
-            # Mevcut stamina'yı yeni maksimumla sınırla
-            player_hp.current_stamina = min(player_hp.current_stamina, float(player_hp.max_stamina))
-
+            active_dash_cd = DASH_COOLDOWN * max(0.2, base_cd_mult)
+            active_slam_cd = SLAM_COOLDOWN_BASE * max(0.2, base_cd_mult)
             if vasil_companion:
                 active_player_speed = PLAYER_SPEED * 1.5
-                # Vasi varken stamina anında dolar (tam güç)
-                player_hp.stamina_regen = STAMINA_REGEN_RATE * 4.0
+                active_dash_cd = 0
+                active_slam_cd = 0
 
             # ── MALİKANE STEALTHFİZİĞİ OVERRİDE ────────────────────────────
-            # Normal bölüm hız hesaplamaları stealth için çok hızlı.
-            # manor_stealth bölümünde tüm karma/level buff'ları bastırılır.
+            # Normal bölüm hız/cooldown hesaplamaları stealth için çok hızlı.
+            # manor_stealth bölümünde tüm karma/level buff'ları bastırılır ve
+            # hız %45'e düşürülür; dash kısa kaçış adımına (1/3 süre) indirgenir.
             _lvl_cfg_physics = EASY_MODE_LEVELS.get(current_level_idx, {})
             if _lvl_cfg_physics.get('type') == 'manor_stealth':
-                active_player_speed   = PLAYER_SPEED * 0.80   # Normal'in %80'i
+                active_player_speed = PLAYER_SPEED * 0.80          # Normal'in %80'i — kontrollü ama kullanılabilir
+                active_dash_cd      = DASH_COOLDOWN * 1.2          # Dash hafif seyrek
+                active_slam_cd      = SLAM_COOLDOWN_BASE            # Slam değişmez
 
             lvl_config = EASY_MODE_LEVELS.get(current_level_idx, EASY_MODE_LEVELS[1])
             if lvl_config.get('type') == 'rest_area':
@@ -1455,15 +1396,8 @@ def run_game_loop():
                 if hasattr(_enemy, 'take_damage'):
                     _killed = _enemy.take_damage(_damage)
                     score  += _damage * 10
-                    if _killed and not hasattr(_enemy, 'arena_id'):
-                        # Normal düşman (CursedEnemy / DroneEnemy / TankEnemy) öldü → sprite sil
-                        _enemy.kill()
-                        # %18 ihtimalle can küresi düşür
-                        if random.random() < 0.18:
-                            _orb = HealthOrb(_enemy.rect.centerx, _enemy.rect.top)
-                            all_health_orbs.add(_orb)
                 else:
-                    # Fallback — take_damage metodu yoksa anında öldür
+                    # CursedEnemy / DroneEnemy / TankEnemy → tek vuruşta ölür
                     _killed = True
                     _enemy.kill()
                     score  += 500
@@ -1541,15 +1475,7 @@ def run_game_loop():
                         continue
                     _ds = math.sqrt((_ne.rect.centerx - _px_s)**2 + (_ne.rect.centery - _py_s)**2)
                     if _ds < _SLAM_RADIUS:
-                        _slam_killed = False
-                        if hasattr(_ne, 'take_damage'):
-                            _slam_killed = _ne.take_damage(_SLAM_DMG)
-                        else:
-                            _slam_killed = True
-                        if _slam_killed:
-                            _ne.kill()
-                            if random.random() < 0.18:
-                                all_health_orbs.add(HealthOrb(_ne.rect.centerx, _ne.rect.top))
+                        _ne.kill()
                         score += 500
                         save_manager.update_karma(-10)
                         player_karma = save_manager.get_karma()
@@ -1646,9 +1572,63 @@ def run_game_loop():
                     score += score_gain
 
             # ═════════════════════════════════════════════════════════════
-            # MALİKANE KAMERA TAKİBİ — aşağıda platform collision sonrasına taşındı
+            # MALİKANE KAMERA TAKİBİ — ÇOK KRİTİK
+            # manor_stealth tipinde kamera kendi kendine kaymaz;
+            # bunun yerine kamera X ofseti oyuncuyu her zaman ekran
+            # ortasında tutacak şekilde hesaplanır.
+            # Tüm draw çağrıları bu ofseti dikkate alır.
             # ═════════════════════════════════════════════════════════════
-            if lvl_config.get('type') != 'manor_stealth':
+            if lvl_config.get('type') == 'manor_stealth':
+                # ── 2D KAMERA TAKİBİ — Anlık ve kesin merkezleme ──────────────
+                # Harita boyutları — platform düzenine göre sabit
+                MANOR_MAP_WIDTH  = lvl_config.get('map_width',  3300)
+                MANOR_MAP_HEIGHT = lvl_config.get('map_height', LOGICAL_HEIGHT)  # Y kamera hareketi yok
+                PLAYER_W_HALF = 15
+                PLAYER_H_HALF = 15
+
+                # Oyuncunun gerçek merkezi → hedef kamera ofseti
+                _target_cam_x = (player_x + PLAYER_W_HALF) - LOGICAL_WIDTH  // 2
+                _target_cam_y = (player_y + PLAYER_H_HALF) - LOGICAL_HEIGHT // 2
+
+                # Sınır: harita dışına çıkılmasın
+                _cam_max_x = max(0, MANOR_MAP_WIDTH  - LOGICAL_WIDTH)
+                _cam_max_y = max(0, MANOR_MAP_HEIGHT - LOGICAL_HEIGHT)
+                _target_cam_x = max(0, min(_target_cam_x, _cam_max_x))
+                _target_cam_y = max(0, min(_target_cam_y, _cam_max_y))
+
+                # Anlık takip — gecikme yok, kamera her zaman oyuncuyu ortalar
+                manor_camera_offset_x = int(_target_cam_x)
+                manor_camera_offset_y = int(_target_cam_y)
+
+                # Malikane bölümünde area_reached kontrolü:
+                # Oyuncu gizli kasanın etrafındaki alana girince görev tamamlanır.
+                # Kasa platformu: x=2720, y=Y_ROOF-140=(1080-200)-140=740
+                _safe_x = lvl_config.get("secret_safe_x", 2910)
+                _safe_y = lvl_config.get("secret_safe_y", 230)
+                _safe_r = lvl_config.get("secret_safe_radius", 100)
+                _dx_safe = player_x - _safe_x
+                _dy_safe = player_y - _safe_y
+                if math.sqrt(_dx_safe * _dx_safe + _dy_safe * _dy_safe) < _safe_r:
+                    # İlk kez tetiklendiyse hedefleri tamamla ve bölümü bitir
+                    from mission_system import mission_manager
+                    mission_manager.set_flag("area_secret_safe", True)
+                    mission_manager.complete_objective("find_secret_safe")
+                    # Tüm muhafızlar elendiyse "eliminate_guards" hedefini de tamamla
+                    if stealth_system.active_guard_count() == 0:
+                        mission_manager.complete_objective("eliminate_guards")
+                    # Hiç alarm verilmediyse opsiyonel bonus
+                    if stealth_system.global_alert == 0:   # ALERT_UNDETECTED
+                        mission_manager.complete_objective("stealth_optional_no_alert")
+                        save_manager.update_karma(15)
+                        player_karma = save_manager.get_karma()
+                        karma_notification_text  = "MÜKEMMEL GİZLİLİK! KARMA +15"
+                        karma_notification_timer = 120
+                    # Bölüm tamamlandı
+                    score += 20000
+                    GAME_STATE = 'LEVEL_COMPLETE'
+                    save_manager.unlock_next_level('easy_mode', current_level_idx)
+                    save_manager.update_high_score('easy_mode', current_level_idx, score)
+            else:
                 manor_camera_offset_x = 0
                 manor_camera_offset_y = 0
 
@@ -1679,18 +1659,10 @@ def run_game_loop():
             for wave in active_damage_waves[:]:
                 wave['r'] += wave['speed'] * frame_mul
                 wave['x'] -= camera_speed * frame_mul
-                for enemy in list(all_enemies):
+                for enemy in all_enemies:
                     dist = math.sqrt((enemy.rect.centerx - wave['x'])**2 + (enemy.rect.centery - wave['y'])**2)
                     if dist < wave['r'] + 20 and dist > wave['r'] - 40:
-                        _wave_killed = False
-                        if hasattr(enemy, 'take_damage'):
-                            _wave_killed = enemy.take_damage(80)
-                        else:
-                            _wave_killed = True
-                        if _wave_killed:
-                            enemy.kill()
-                            if random.random() < 0.18:
-                                all_health_orbs.add(HealthOrb(enemy.rect.centerx, enemy.rect.top))
+                        enemy.kill()
                         score += 500
                         save_manager.update_karma(-10)
                         player_karma = save_manager.get_karma()
@@ -1717,18 +1689,7 @@ def run_game_loop():
                 meteor_hit_radius = 120
                 enemy_hits_aoe = [e for e in all_enemies if math.sqrt((e.rect.centerx - px)**2 + (e.rect.centery - py)**2) < meteor_hit_radius]
                 for enemy in enemy_hits_aoe:
-                    if isinstance(enemy, EnemyBullet):
-                        continue
-                    _dash_killed = False
-                    if hasattr(enemy, 'take_damage'):
-                        _dash_killed = enemy.take_damage(_DASH_DMG)
-                    else:
-                        _dash_killed = True
-                    if _dash_killed:
-                        enemy.kill()
-                        # %18 ihtimalle can küresi düşür
-                        if random.random() < 0.18:
-                            all_health_orbs.add(HealthOrb(enemy.rect.centerx, enemy.rect.top))
+                    enemy.kill()
                     score += 500
                     save_manager.update_karma(-10)
                     player_karma = save_manager.get_karma()
@@ -1777,7 +1738,7 @@ def run_game_loop():
                     screen_shake = 12
                     all_vfx.add(ParticleExplosion(player_x+15, player_y+15, PLAYER_SLAM, 12))
             else:
-                if lvl_config.get('type') not in ('rest_area', 'manor_stealth'):
+                if lvl_config.get('type') != 'rest_area':
                     player_x -= camera_speed * frame_mul
                 if keys[pygame.K_a]:
                     player_x -= active_player_speed * frame_mul
@@ -1813,74 +1774,16 @@ def run_game_loop():
                     if 'player_speed' in physics:
                         player_x += (PLAYER_SPEED * physics['player_speed'] - PLAYER_SPEED) * frame_mul
 
+            if dash_cooldown_timer > 0:
+                dash_cooldown_timer -= frame_mul
+            if slam_cooldown > 0:
+                slam_cooldown -= frame_mul
             if screen_shake > 0:
                 screen_shake -= 1
             if karma_notification_timer > 0:
                 karma_notification_timer -= 1
 
-            # ── Altıpatar sayaçları güncelle ─────────────────────────────────
-            if gun_cooldown > 0:
-                gun_cooldown = max(0.0, gun_cooldown - dt)
-                # Dolum tamamlandıysa şarjörü doldur
-                if is_reloading and gun_cooldown <= 0:
-                    is_reloading   = False
-                    player_bullets = REVOLVER_MAX_BULLETS
-                    karma_notification_text  = "ŞARJÖR TAMAM!"
-                    karma_notification_timer = 30
-
-            # ── Oyuncu mermilerini güncelle ──────────────────────────────────
-            for _proj in list(all_player_projectiles):
-                _proj.update(camera_speed, dt)
-
-            # ── Mermi → düşman çarpışması ────────────────────────────────────
-            _lvl_cfg_revolver = EASY_MODE_LEVELS.get(current_level_idx, {})
-            if _lvl_cfg_revolver.get('type') != 'manor_stealth':
-                _hit_dict = pygame.sprite.groupcollide(
-                    all_player_projectiles, all_enemies, True, False
-                )
-                for _proj_hit, _enemies_hit in _hit_dict.items():
-                    for _enemy_hit in _enemies_hit:
-                        if hasattr(_enemy_hit, 'take_damage'):
-                            _enemy_hit.take_damage(REVOLVER_DAMAGE)
-                        score += 300
-                        enemies_killed_current_level += 1
-                        save_manager.update_karma(-5)  # Silah kullanımı karma maliyeti
-                        player_karma = save_manager.get_karma()
-                        karma_notification_text  = f"İSABET! -{REVOLVER_DAMAGE} HP"
-                        karma_notification_timer = 30
-                        all_vfx.add(ParticleExplosion(
-                            _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                            (255, 100, 30), 10
-                        ))
-                        all_vfx.add(Shockwave(
-                            _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                            (255, 150, 50), max_radius=50, rings=1, speed=10
-                        ))
-                        screen_shake = max(screen_shake, 3)
-                        # Ölü düşman temizliği
-                        if hasattr(_enemy_hit, 'is_active') and not _enemy_hit.is_active:
-                            _enemy_hit.kill()
-                            all_vfx.add(ParticleExplosion(
-                                _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                                CURSED_PURPLE, 20
-                            ))
-
-                # Arena düşmanlarına da mermi isabet
-                if lvl_config.get('type') == 'beat_arena':
-                    _arena_hit = pygame.sprite.groupcollide(
-                        all_player_projectiles, beat_arena.arena_enemies, True, False
-                    )
-                    for _ap, _ae_list in _arena_hit.items():
-                        for _ae in _ae_list:
-                            if hasattr(_ae, 'take_damage'):
-                                _ae.take_damage(REVOLVER_DAMAGE)
-                            score += 300
-                            all_vfx.add(ParticleExplosion(
-                                _ae.rect.centerx, _ae.rect.centery,
-                                (255, 100, 30), 10
-                            ))
-
-            PLAYER_W, PLAYER_H = 28, 42   # sprite boyutuyla eşleşir
+            PLAYER_W, PLAYER_H = 30, 30
             player_rect = pygame.Rect(int(player_x), int(player_y), PLAYER_W, PLAYER_H)
             dummy_player = type('',(object,),{'rect':player_rect})()
             enemy_hits = pygame.sprite.spritecollide(dummy_player, all_enemies, False)
@@ -1901,15 +1804,8 @@ def run_game_loop():
                     continue
 
                 if isinstance(enemy, EnemyBullet):
-                    _bullet_died = player_hp.take_damage(30)
-                    screen_shake = max(screen_shake, 10)
-                    all_vfx.add(ScreenFlash((255, 0, 0), 80, 5))
+                    GAME_STATE = 'GAME_OVER'
                     enemy.kill()
-                    if _bullet_died:
-                        GAME_STATE = 'GAME_OVER'
-                        high_score = max(high_score, int(score))
-                        save_manager.update_high_score('easy_mode', current_level_idx, score)
-                        audio_manager.stop_music()
                     continue
 
                 if is_dashing or is_slamming or is_super_mode:
@@ -1940,23 +1836,17 @@ def run_game_loop():
                         y_velocity = -15
                         is_jumping = True
                     else:
-                        # --- CAN SİSTEMİ: Anlık ölüm yok, hasar al ---
-                        _touch_died = player_hp.take_damage(20)
-                        screen_shake = max(screen_shake, 12)
-                        all_vfx.add(ScreenFlash((255, 0, 0), 80, 5))
-                        all_vfx.add(ParticleExplosion(int(player_x + 15), int(player_y + 15), CURSED_RED, 10))
-                        if _touch_died:
-                            if current_level_idx == 10:
-                                init_limbo()
-                                GAME_STATE = 'PLAYING'
-                                if npcs:
-                                    start_npc_conversation(npcs[0])
-                            else:
-                                GAME_STATE = 'GAME_OVER'
-                                high_score = max(high_score, int(score))
-                                save_manager.update_high_score('easy_mode', current_level_idx, score)
-                                audio_manager.stop_music()
-                                all_vfx.add(ParticleExplosion(player_x, player_y, CURSED_RED, 30))
+                        if current_level_idx == 10:
+                            init_limbo()
+                            GAME_STATE = 'PLAYING'
+                            if npcs:
+                                start_npc_conversation(npcs[0])
+                        else:
+                            GAME_STATE = 'GAME_OVER'
+                            high_score = max(high_score, int(score))
+                            save_manager.update_high_score('easy_mode', current_level_idx, score)
+                            audio_manager.stop_music()
+                            all_vfx.add(ParticleExplosion(player_x, player_y, CURSED_RED, 30))
 
             move_rect = pygame.Rect(int(player_x), int(min(old_y, player_y)), PLAYER_W, int(abs(player_y - old_y)) + PLAYER_H)
             collided_platforms = pygame.sprite.spritecollide(type('',(object,),{'rect':move_rect})(), all_platforms, False)
@@ -1987,9 +1877,10 @@ def run_game_loop():
                         all_vfx.add(ParticleExplosion(player_x+15, player_y+30, CURRENT_THEME["player_color"], 8))
                     break
 
-            # ── MALİKANE: Yatay duvar + kapı çarpışması ──────────────────────
+            # ── MALİKANE: Yatay duvar çarpışması ─────────────────────────────
+            # Duvar platformları (yüksekliği > genişliğinden büyük olanlar)
+            # oyuncunun soldan veya sağdan geçişini engeller.
             if lvl_config.get('type') == 'manor_stealth':
-                # Dikey platform (duvar) çarpışması
                 _wall_rect = pygame.Rect(int(player_x), int(player_y) + 4, PLAYER_W, PLAYER_H - 8)
                 for _wp in all_platforms:
                     if _wp.rect.height > _wp.rect.width:   # Dikey (duvar) platform
@@ -1999,109 +1890,10 @@ def run_game_loop():
                             elif old_x >= _wp.rect.right - 6:
                                 player_x = float(_wp.rect.right)
 
-                # Kilitli kapı çarpışması — "CART CURT" sesi + geri it
-                try:
-                    _door_rect_p = pygame.Rect(int(player_x) + 3, int(player_y) + 2,
-                                               PLAYER_W - 6, PLAYER_H - 4)
-                    for _door in manor_doors:
-                        if not _door.active:
-                            continue
-                        if _door_rect_p.colliderect(_door.rect):
-                            # Sese bas (sadece ilk çarpışmada, spam olmasın)
-                            if not getattr(_door, '_bump_cooldown', 0):
-                                try:
-                                    import pygame as _pg
-                                    # Kısa metalik tıkırtı sesi — basit beep ile simüle
-                                    _bump_snd = _pg.sndarray.make_sound(
-                                        __import__('numpy').array(
-                                            [int(3000 * __import__('math').sin(
-                                                i * 0.8 + __import__('math').sin(i * 0.3) * 2
-                                            )) for i in range(4000)],
-                                            dtype=__import__('numpy').int16
-                                        ).reshape(-1, 1).repeat(2, axis=1)
-                                    )
-                                    _bump_snd.set_volume(0.4)
-                                    _bump_snd.play()
-                                except Exception:
-                                    pass   # numpy yoksa sessiz geç
-                                _door._bump_cooldown = 20   # 20 kare bekleme
-                            else:
-                                _door._bump_cooldown -= 1
-
-                            # Kapıdan geri it
-                            if old_x + PLAYER_W <= _door.rect.left + 10:
-                                player_x = float(_door.rect.left - PLAYER_W - 1)
-                            elif old_x >= _door.rect.right - 10:
-                                player_x = float(_door.rect.right + 1)
-                            else:
-                                player_x = old_x
-                            break
-                        elif getattr(_door, '_bump_cooldown', 0):
-                            _door._bump_cooldown = max(0, _door._bump_cooldown - 1)
-                except NameError:
-                    pass   # manor_doors henüz tanımlanmamışsa sessizce geç
-
-                # ── KAMERA TAKİBİ — tüm fizik & çarpışma sonrası ─────────────
-                # Burada hesaplama yapılır ki kamera oyuncunun SON konumunu görsün.
-                MANOR_MAP_WIDTH  = lvl_config.get('map_width',  3300)
-                MANOR_MAP_HEIGHT = lvl_config.get('map_height', LOGICAL_HEIGHT)
-
-                # Oyuncu merkezini hesapla
-                _pcx = player_x + PLAYER_W / 2
-                _pcy = player_y + PLAYER_H / 2
-
-                # Kamera hedefi: oyuncu tam ortada olsun
-                _target_cam_x = _pcx - LOGICAL_WIDTH  / 2
-                _target_cam_y = _pcy - LOGICAL_HEIGHT / 2
-
-                # Harita sınırları
-                _cam_max_x = max(0, MANOR_MAP_WIDTH  - LOGICAL_WIDTH)
-                _cam_max_y = max(0, MANOR_MAP_HEIGHT - LOGICAL_HEIGHT)
-                _target_cam_x = max(0.0, min(float(_target_cam_x), float(_cam_max_x)))
-                _target_cam_y = max(0.0, min(float(_target_cam_y), float(_cam_max_y)))
-
-                # Hafif lerp (0.18) — kayışlı ama gecikmesiz hissini verir
-                # Tam anlık istersen 1.0 yap
-                _CAM_LERP = 0.22
-                manor_camera_offset_x += (_target_cam_x - manor_camera_offset_x) * _CAM_LERP
-                manor_camera_offset_y += (_target_cam_y - manor_camera_offset_y) * _CAM_LERP
-
-                # ── Kasa alanı kontrolü ───────────────────────────────────────
-                _safe_x = lvl_config.get("secret_safe_x", 2910)
-                _safe_y = lvl_config.get("secret_safe_y", 230)
-                _safe_r = lvl_config.get("secret_safe_radius", 100)
-                _dx_safe = player_x - _safe_x
-                _dy_safe = player_y - _safe_y
-                if math.sqrt(_dx_safe * _dx_safe + _dy_safe * _dy_safe) < _safe_r:
-                    from mission_system import mission_manager
-                    mission_manager.set_flag("area_secret_safe", True)
-                    mission_manager.complete_objective("find_secret_safe")
-                    if stealth_system.active_guard_count() == 0:
-                        mission_manager.complete_objective("eliminate_guards")
-                    if stealth_system.global_alert == 0:
-                        mission_manager.complete_objective("stealth_optional_no_alert")
-                        save_manager.update_karma(15)
-                        player_karma = save_manager.get_karma()
-                        karma_notification_text  = "MÜKEMMEL GİZLİLİK! KARMA +15"
-                        karma_notification_timer = 120
-                    score += 20000
-                    GAME_STATE = 'LEVEL_COMPLETE'
-                    save_manager.unlock_next_level('easy_mode', current_level_idx)
-                    save_manager.update_high_score('easy_mode', current_level_idx, score)
-
-            # ── Can Küreleri (HealthOrb) güncelle + topla ─────────────────
-            _player_rect_orb = pygame.Rect(int(player_x), int(player_y), PLAYER_W, PLAYER_H)
-            for _orb in list(all_health_orbs):
-                _orb.update(camera_speed, dt)
-                if _player_rect_orb.colliderect(_orb.rect):
-                    player_hp.heal(HealthOrb.HEAL_AMOUNT)
-                    _orb.kill()
-                    karma_notification_text  = f"CAN +{HealthOrb.HEAL_AMOUNT}"
-                    karma_notification_timer = 45
-                    all_vfx.add(EnergyOrb(int(player_x + 15), int(player_y - 20), (0, 255, 80), 8, 20))
-
             for npc in npcs:
                 npc.update(player_x, player_y, dt)
+
+            if vasil_companion:
                 action = vasil_companion.update(player_x, player_y, all_enemies, boss_manager_system, camera_speed)
                 if action:
                     act_type, target = action
@@ -2377,6 +2169,8 @@ def run_game_loop():
             'theme': CURRENT_THEME,
             'score': score,
             'high_score': high_score,
+            'dash_cd': dash_cooldown_timer,
+            'slam_cd': slam_cooldown,
             'time_ms': time_ms,
             'settings': game_settings,
             'progress': loading_progress,
@@ -2399,6 +2193,8 @@ def run_game_loop():
             'npc_chat_history': npc_chat_history,
             'karma': player_karma,
             'kills': enemies_killed_current_level,
+            'active_dash_max': active_dash_cd,
+            'active_slam_max': active_slam_cd,
             'term_input': terminal_input,
             'term_status': terminal_status,
             'level_select_page': level_select_page,
@@ -2410,13 +2206,6 @@ def run_game_loop():
             'combo_info':  combo_system.get_hud_info(),
             'player_hp':   player_hp.current_hp,
             'player_hp_max': player_hp.max_hp,
-            # --- STAMINA ---
-            'stamina':     player_hp.current_stamina,
-            'stamina_max': player_hp.max_stamina,
-            # --- ALTIPATAR ---
-            'player_bullets': player_bullets,
-            'gun_cooldown':   gun_cooldown,
-            'is_reloading':   is_reloading,
         }
 
         if GAME_STATE in ['MENU', 'SETTINGS', 'LOADING', 'LEVEL_SELECT', 'ENDLESS_SELECT', 'TERMINAL']:
@@ -2528,15 +2317,13 @@ def run_game_loop():
             if lvl_config.get('type') == 'beat_arena':
                 beat_arena.draw(game_canvas)
 
-            # ── Can Kürelerini çiz ────────────────────────────────────────
-            for _orb in all_health_orbs:
-                _orb.draw(game_canvas, render_offset, CURRENT_THEME)
-
             # ── Kombo sistemi hitbox (her bölümde) ───────────────────────
             combo_system.draw(vfx_surface)
 
-            # ── Combat HUD (her bölümde) — kombo zinciri ────────────────
-            # HP + Stamina barları ui_system.py içinde render edilir (Step 12).
+            # ── Combat HUD (her bölümde) — can çubuğu + kombo zinciri ───
+            # Can çubuğu: sadece arena bölümlerinde (normal bölümlerde anlık ölüm var)
+            if lvl_config.get('type') == 'beat_arena':
+                player_hp.draw_hud(game_canvas, 20, 20)
             # Kombo zinciri her bölümde görünür
             hud_info = combo_system.get_hud_info()
             if hud_info.get('chain') or hud_info.get('last_combo'):
@@ -2547,10 +2334,6 @@ def run_game_loop():
                 v.draw(vfx_surface)
             for trail in trail_effects:
                 trail.draw(vfx_surface)
-
-            # ── Oyuncu mermilerini çiz (VFX yüzeyi üstünde) ──────────────
-            for _p in all_player_projectiles:
-                _p.draw(game_canvas)
 
             # ── 7. NPC'ler ───────────────────────────────────────────────
             for npc in npcs:
@@ -2593,8 +2376,8 @@ def run_game_loop():
                     dt, character_state, player_direction
                 )
 
-                _px = int(player_x) + render_offset[0] + int(-manor_camera_offset_x)
-                _py = int(player_y) + render_offset[1] + int(-manor_camera_offset_y)
+                _px = int(player_x) + render_offset[0] + _manor_draw_ox
+                _py = int(player_y) + render_offset[1] + _manor_draw_oy
 
                 # ── DEBUG: print + sheet görselleştirme ──────────────────
                 if DEBUG_SPRITE:

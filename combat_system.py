@@ -938,25 +938,13 @@ class PlayerHealth:
         player_hp.draw_hud(game_canvas)
     """
 
-    # ── Stamina varsayılan değerleri (init_game override edebilir) ──────────
-    DEFAULT_MAX_STAMINA   = 100
-    DEFAULT_STAMINA_REGEN = 18.0   # /saniye dolum
-    STAMINA_REGEN_DELAY   = 0.6    # Hasar sonrası regenerasyon gecikmesi (sn)
-
-    def __init__(self, max_hp: int = 100,
-                 max_stamina: int = None, stamina_regen: float = None):
+    def __init__(self, max_hp: int = 100):
         self.max_hp        = max_hp
         self.current_hp    = max_hp
         self.invincible    = False
         self.inv_timer     = 0.0
         self.inv_duration  = 0.8    # Hasar sonrası geçici dokunulmazlık (sn)
         self._shake_timer  = 0.0
-
-        # ── Stamina ────────────────────────────────────────────────────────
-        self.max_stamina      = max_stamina  if max_stamina  is not None else self.DEFAULT_MAX_STAMINA
-        self.current_stamina  = float(self.max_stamina)
-        self.stamina_regen    = stamina_regen if stamina_regen is not None else self.DEFAULT_STAMINA_REGEN
-        self._stamina_regen_delay = 0.0   # Harcarken geri sayar
 
     # ── Hasar al ───────────────────────────────────────────
     def take_damage(self, amount: int) -> bool:
@@ -968,18 +956,6 @@ class PlayerHealth:
         self.inv_timer     = self.inv_duration
         self._shake_timer  = 0.3
         return self.current_hp <= 0
-
-    # ── Stamina Harca ───────────────────────────────────────
-    def consume_stamina(self, amount: float) -> bool:
-        """
-        Yeterli stamina varsa düşürür ve True döndürür.
-        Yoksa False döndürür (yetenek iptal edilir).
-        """
-        if self.current_stamina < amount:
-            return False
-        self.current_stamina          -= amount
-        self._stamina_regen_delay      = self.STAMINA_REGEN_DELAY
-        return True
 
     # ── İyileş ─────────────────────────────────────────────
     def heal(self, amount: int):
@@ -994,35 +970,26 @@ class PlayerHealth:
         if self._shake_timer > 0:
             self._shake_timer -= dt
 
-        # ── Stamina regenerasyonu ────────────────────────────────────────
-        if self._stamina_regen_delay > 0:
-            self._stamina_regen_delay -= dt
-        else:
-            if self.current_stamina < self.max_stamina:
-                self.current_stamina = min(
-                    float(self.max_stamina),
-                    self.current_stamina + self.stamina_regen * dt
-                )
-
     # ── HUD çizimi ─────────────────────────────────────────
     def draw_hud(self, surface, x: int = 20, y: int = 20):
         """
-        Sadece HP çubuğu — yalnızca harici (arena dışı) kullanım için.
-        PLAYING modunda HP + Stamina ui_system.py içinde çizilir.
+        PLACEHOLDER: Kırmızı dikdörtgen HP çubuğu.
         [TODO - PIXEL ART]: Pixel art kalp / enerji kristali.
         """
         bar_w, bar_h = 200, 18
         pct = max(0.0, self.current_hp / self.max_hp)
 
+        # Yanıp sönme efekti (invincible)
         if self.invincible:
             tick_mod = (pygame.time.get_ticks() // 80) % 2
             if tick_mod == 1:
-                return
+                return   # Bu frame çizme → yanıp söner
 
-        pygame.draw.rect(surface, (50, 0, 0),      (x, y, bar_w, bar_h))
+        pygame.draw.rect(surface, (50, 0, 0),   (x, y, bar_w, bar_h))
         fill_color = (220, 30, 30) if pct > 0.3 else (255, 80, 0) if pct > 0.15 else (255, 0, 0)
-        pygame.draw.rect(surface, fill_color,       (x, y, int(bar_w * pct), bar_h))
-        pygame.draw.rect(surface, (200, 200, 200),  (x, y, bar_w, bar_h), 2)
+        pygame.draw.rect(surface, fill_color,    (x, y, int(bar_w * pct), bar_h))
+        pygame.draw.rect(surface, (200, 200, 200), (x, y, bar_w, bar_h), 2)
+
         hp_txt = f"HP  {max(0, self.current_hp)} / {self.max_hp}"
         _draw_label(surface, hp_txt, x + bar_w // 2, y + 2, WHITE, 16)
 

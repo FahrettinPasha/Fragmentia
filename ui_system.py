@@ -1,7 +1,6 @@
 import pygame
 import math
 from settings import *
-from settings import REVOLVER_MAX_BULLETS, REVOLVER_COOLDOWN
 from utils import draw_text_with_shadow, wrap_text
 from story_system import ai_chat_effect
 
@@ -555,129 +554,6 @@ def render_settings_menu(surface, mouse_pos, settings_data):
     return active_buttons
 
 
-def draw_revolver_hud(surface, bullets: int, gun_cooldown: float, is_reloading: bool):
-    """
-    Ekranın sağ alt köşesine altıpatar mermi hazne göstergesi çizer.
-
-    Parametreler:
-        surface      : Çizilecek yüzey (game_canvas).
-        bullets      : Kalan mermi sayısı (0..REVOLVER_MAX_BULLETS).
-        gun_cooldown : Kalan bekleme süresi (>0 = yeni atıldı).
-        is_reloading : True ise şarjör dolduruluyor.
-
-    Çizim düzeni (placeholder):
-        - Arka panel: koyu, yarı saydam kutu
-        - 6 mermi yuvası: dolu=sarı daire, boş=gri halka
-        - Dönme animasyonu: atış sonrası hazne birkaç frame döner
-        - "DOLDURULUYOR..." metni şarjör değişiminde görünür
-
-    [TODO - UI ART]:
-        revolver_cylinder.png, bullet.png, casing.png sprite'larıyla değiştir.
-    """
-    w = surface.get_width()
-
-    # ── Panel boyutu ve konumu (sağ alt köşe) ──────────────────────────
-    PANEL_W, PANEL_H = 220, 130
-    PANEL_X = w - PANEL_W - 24
-    PANEL_Y = surface.get_height() - PANEL_H - 24
-    panel_rect = pygame.Rect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
-
-    # ── Arka panel ──────────────────────────────────────────────────────
-    panel_surf = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
-    panel_surf.fill((0, 0, 0, 200))
-    surface.blit(panel_surf, panel_rect.topleft)
-    border_col = (200, 160, 40) if not is_reloading else (255, 200, 60)
-    pygame.draw.rect(surface, border_col, panel_rect, 2)
-
-    # ── Başlık metni ─────────────────────────────────────────────────────
-    title_font = pygame.font.Font(None, 20)
-    title_surf = title_font.render("ALTIPATAR", True, border_col)
-    surface.blit(title_surf, (PANEL_X + 8, PANEL_Y + 6))
-
-    # ── Hazne dönüş açısı (atış sonrası 60° döner) ──────────────────────
-    if is_reloading:
-        # Dolum sırasında tam dönüş
-        rotation_angle = (1.0 - (gun_cooldown / max(REVOLVER_RELOAD_TIME, 0.001))) * 360.0
-    elif gun_cooldown > 0:
-        # Normal atış sonrası bir yuva kadar döner (60°)
-        rotation_angle = (1.0 - (gun_cooldown / max(REVOLVER_COOLDOWN, 0.001))) * 60.0
-    else:
-        rotation_angle = 0.0
-
-    # ── Hazne merkezi ve yarıçapı ────────────────────────────────────────
-    CX = PANEL_X + PANEL_W // 2
-    CY = PANEL_Y + PANEL_H // 2 + 8
-    RADIUS = 38
-    SLOT_R = 9   # Her yuvanın yarıçapı
-
-    # Hazne arka çemberi (silindir görünümü)
-    pygame.draw.circle(surface, (40, 30, 10), (CX, CY), RADIUS + 6)
-    pygame.draw.circle(surface, border_col,  (CX, CY), RADIUS + 6, 2)
-
-    # ── 6 mermi yuvasını çiz ─────────────────────────────────────────────
-    for i in range(REVOLVER_MAX_BULLETS):
-        base_angle_deg = i * 60.0 + rotation_angle
-        base_angle_rad = math.radians(base_angle_deg)
-
-        sx = int(CX + math.cos(base_angle_rad) * RADIUS)
-        sy = int(CY + math.sin(base_angle_rad) * RADIUS)
-
-        if i < bullets:
-            # Dolu mermi — parlak sarı daire
-            pygame.draw.circle(surface, (80, 60, 0),   (sx, sy), SLOT_R)
-            pygame.draw.circle(surface, (255, 210, 30), (sx, sy), SLOT_R - 2)
-            # Parıltı noktası
-            pygame.draw.circle(surface, (255, 255, 200), (sx - 2, sy - 2), 2)
-        else:
-            # Boş kovan — gri halka
-            pygame.draw.circle(surface, (50, 40, 20),  (sx, sy), SLOT_R)
-            pygame.draw.circle(surface, (120, 100, 50), (sx, sy), SLOT_R - 2)
-            pygame.draw.circle(surface, (60, 50, 30),   (sx, sy), SLOT_R - 5)
-            pygame.draw.circle(surface, (80, 70, 40),   (sx, sy), SLOT_R - 2, 1)
-
-    # Orta delik (namlu girişi)
-    pygame.draw.circle(surface, (10, 8, 4),    (CX, CY), 10)
-    pygame.draw.circle(surface, border_col,    (CX, CY), 10, 1)
-
-    # ── Mermi sayısı metni (sol alt) ────────────────────────────────────
-    cnt_font = pygame.font.Font(None, 28)
-    cnt_surf = cnt_font.render(f"{bullets}/{REVOLVER_MAX_BULLETS}", True, (240, 230, 180))
-    surface.blit(cnt_surf, (PANEL_X + 8, PANEL_Y + PANEL_H - 28))
-
-    # ── Dolum veya bekleme çubuğu ────────────────────────────────────────
-    BAR_X = PANEL_X + 8
-    BAR_Y = PANEL_Y + PANEL_H - 42
-    BAR_W = PANEL_W - 16
-    BAR_H = 8
-
-    if is_reloading:
-        fill_pct = 1.0 - (gun_cooldown / max(REVOLVER_RELOAD_TIME, 0.001))
-        bar_col  = (60, 200, 60)
-        # "DOLDURULUYOR..." etiketi
-        rl_font = pygame.font.Font(None, 22)
-        rl_surf = rl_font.render("DOLDURULUYOR...", True, (100, 255, 100))
-        surface.blit(rl_surf, (PANEL_X + PANEL_W // 2 - rl_surf.get_width() // 2,
-                               PANEL_Y + 6))
-        # Başlık metnini gizle (üstüne yazılır)
-        pygame.draw.rect(surface, (0, 0, 0, 200),
-                         pygame.Rect(PANEL_X + 6, PANEL_Y + 4, PANEL_W - 12, 18))
-        surface.blit(rl_surf, (PANEL_X + PANEL_W // 2 - rl_surf.get_width() // 2,
-                               PANEL_Y + 6))
-    elif gun_cooldown > 0:
-        fill_pct = 1.0 - (gun_cooldown / max(REVOLVER_COOLDOWN, 0.001))
-        bar_col  = (200, 160, 40)
-    else:
-        fill_pct = 1.0
-        bar_col  = (200, 160, 40)
-
-    fill_pct = max(0.0, min(1.0, fill_pct))
-    pygame.draw.rect(surface, (30, 25, 10), (BAR_X, BAR_Y, BAR_W, BAR_H))
-    pygame.draw.rect(surface, bar_col,      (BAR_X, BAR_Y, int(BAR_W * fill_pct), BAR_H))
-    pygame.draw.rect(surface, border_col,   (BAR_X, BAR_Y, BAR_W, BAR_H), 1)
-
-
-# --- ANA RENDER YÖNETİCİSİ ---
-
 def render_ui(surface, state, data, mouse_pos=(0, 0)):
     """Ana render yöneticisi — tüm state'leri karşılar."""
     time_ms = data.get('time_ms', pygame.time.get_ticks())
@@ -747,59 +623,35 @@ def render_ui(surface, state, data, mouse_pos=(0, 0)):
 
     elif state == 'PLAYING':
         current_theme = data.get('theme') or THEMES[0]
-        border_col    = current_theme["border_color"]
 
-        # ── Sol Panel: HP + Stamina ───────────────────────────────────────
-        # Panel yüksekliği iki bar + etiket + marj = 140px
-        left_panel = pygame.Rect(30, 30, 260, 140)
-        draw_cyber_panel(surface, left_panel, border_col, f"BÖLÜM {data['level_idx']}")
+        # Sol panel
+        left_panel = pygame.Rect(35, 35, 290, 100)
+        draw_cyber_panel(surface, left_panel, current_theme["border_color"],
+                         f"BÖLÜM {data['level_idx']}")
 
-        BAR_X   = 50          # Sol kenar
-        BAR_W   = 220         # Bar genişliği
-        LABEL_F = pygame.font.Font(None, 18)
+        # DASH barı
+        active_dash_max = data.get('active_dash_max', 1) or 1
+        d_fill = int(200 * (1 - (data['dash_cd'] / active_dash_max)))
+        pygame.draw.rect(surface, (50, 50, 50), (58, 88, 200, 9))
+        pygame.draw.rect(surface, PLAYER_DASH, (58, 88, max(0, d_fill), 9))
+        dash_font = pygame.font.Font(None, 19)
+        draw_text_with_shadow(surface, "DASH", dash_font, (58, 73), PLAYER_DASH, align='midleft')
 
-        # ── HP Barı (y=55) ────────────────────────────────────────────────
-        hp_cur = data.get('player_hp',     100)
-        hp_max = data.get('player_hp_max', 100) or 1
-        hp_pct = max(0.0, min(1.0, hp_cur / hp_max))
+        # SLAM barı
+        active_slam_max = data.get('active_slam_max', 1) or 1
+        s_fill = int(200 * (1 - (data['slam_cd'] / active_slam_max)))
+        pygame.draw.rect(surface, (50, 50, 50), (58, 116, 200, 9))
+        pygame.draw.rect(surface, PLAYER_SLAM, (58, 116, max(0, s_fill), 9))
+        slam_font = pygame.font.Font(None, 19)
+        draw_text_with_shadow(surface, "SLAM", slam_font, (58, 101), PLAYER_SLAM, align='midleft')
 
-        HP_Y, HP_H = 55, 16
-        hp_fill_col = (220, 30, 30) if hp_pct > 0.3 else (255, 80, 0) if hp_pct > 0.15 else (255, 0, 0)
-
-        pygame.draw.rect(surface, (50, 0, 0),       (BAR_X, HP_Y, BAR_W, HP_H))
-        pygame.draw.rect(surface, hp_fill_col,       (BAR_X, HP_Y, int(BAR_W * hp_pct), HP_H))
-        pygame.draw.rect(surface, (180, 180, 180),   (BAR_X, HP_Y, BAR_W, HP_H), 1)
-
-        lbl_hp = LABEL_F.render(f"HP  {max(0, int(hp_cur))} / {hp_max}", True, (230, 230, 230))
-        surface.blit(lbl_hp, (BAR_X + BAR_W // 2 - lbl_hp.get_width() // 2, HP_Y + 1))
-
-        # ── Stamina Barı (y=90) ───────────────────────────────────────────
-        st_cur = data.get('stamina',     100)
-        st_max = data.get('stamina_max', 100) or 1
-        st_pct = max(0.0, min(1.0, st_cur / st_max))
-
-        ST_Y, ST_H = 95, 14
-        if st_pct > 0.60:
-            st_fill_col = (0, 210, 255)     # Dolu  → cyan
-        elif st_pct > 0.25:
-            st_fill_col = (220, 200, 0)     # Yarı  → sarı
-        else:
-            st_fill_col = (255, 60, 60)     # Boş   → kırmızı
-
-        pygame.draw.rect(surface, (10, 20, 35),     (BAR_X, ST_Y, BAR_W, ST_H))
-        pygame.draw.rect(surface, st_fill_col,       (BAR_X, ST_Y, int(BAR_W * st_pct), ST_H))
-        pygame.draw.rect(surface, (80, 160, 200),    (BAR_X, ST_Y, BAR_W, ST_H), 1)
-
-        lbl_st = LABEL_F.render(f"STAMINA  {int(st_cur)}/{st_max}", True, (160, 220, 255))
-        surface.blit(lbl_st, (BAR_X + BAR_W // 2 - lbl_st.get_width() // 2, ST_Y + 1))
-
-        # ── Karma + Ölüm sayacı (panel sağına, ayrı küçük kutu) ──────────
+        # Karma
         karma = data.get('karma', 0)
         kills = data.get('kills', 0)
         karma_color = (0, 220, 80) if karma > 20 else ((220, 50, 50) if karma < -20 else WHITE)
-        karma_font  = pygame.font.Font(None, 24)
-        draw_text_with_shadow(surface, f"KARMA: {karma}", karma_font, (310, 55), karma_color)
-        draw_text_with_shadow(surface, f"ÖLÜM: {kills}",  karma_font, (310, 82), (200, 50, 50))
+        karma_font = pygame.font.Font(None, 24)
+        draw_text_with_shadow(surface, f"KARMA: {karma}", karma_font, (340, 58), karma_color)
+        draw_text_with_shadow(surface, f"ÖLÜM: {kills}", karma_font, (340, 82), (200, 50, 50))
 
         # Skor paneli (sağ üst)
         goal = data['level_data'].get('goal_score', 0)
@@ -816,18 +668,5 @@ def render_ui(surface, state, data, mouse_pos=(0, 0)):
 
         score_font = pygame.font.Font(None, 28)
         draw_text_with_shadow(surface, score_text, score_font, (w - 188, 92), WHITE, align='center')
-
-        # ── Altıpatar HUD ─────────────────────────────────────────────────
-        # ui_data'dan gelen revolver bilgilerini çiz.
-        # main.py, 'player_bullets', 'gun_cooldown', 'is_reloading' anahtarlarını
-        # ui_data sözlüğüne ekleyerek bu bloğu besler.
-        _rev_bullets   = data.get('player_bullets', -1)
-        if _rev_bullets >= 0:   # -1 → silah yok / devre dışı
-            draw_revolver_hud(
-                surface,
-                bullets      = _rev_bullets,
-                gun_cooldown = data.get('gun_cooldown',   0.0),
-                is_reloading = data.get('is_reloading',  False),
-            )
 
     return interactive_elements

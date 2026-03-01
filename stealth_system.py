@@ -838,58 +838,118 @@ STEALTH_LEVEL_CONFIGS: Dict[int, Dict] = {
     },
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Bölüm 16: EGEMENLERİN MALİKANESİ — Az ama stratejik düşman yerleşimi
+    # Bölüm 16: EGEMENLERİN MALİKANESİ — Devasa gizlilik haritası
     # ──────────────────────────────────────────────────────────────────────────
-    # Harita akışı (init_game bölüm planına uygun):
-    #   BAHÇE         (x=40-380,   y≈1000): Zemin
-    #   GİRİŞ HOLÜ   (x=376-800,  y≈1000): Zemin — 2 çapraz kamera
-    #   KÜTÜPHANESİ  (x=60-1300,  y≈790):  1. Kat — Güvenlik Terminali
-    #   EFENDİ DAİRESİ(x=1318-2378,y≈590): 2. Kat — Şifre Parşömeni
-    #   KASA ODASI   (x=2396-2900, y≈350):  Çatı — Hedef
+    # Platform düzeni (init_game tarafından üretilir, koordinatlar buraya referans):
     #
-    # Her oda farklı bir bulmaca:
-    #   Bahçe        → 1 muhafız geniş devriye → zamanla arkasından geç
-    #   Giriş Holü   → 2 çapraz kamera, muhafız yok → kör noktadan sprint
-    #   Kütüphane    → 1 sabit muhafız dönüyor → sola dönerken terminale koş
-    #   Efendi Dairesi→ 2 devriye + 1 kamera → parşömen rafına ulaş
-    #   Kasa Odası   → 1 bekçi + 1 kamera → son engel
+    #   ZEMİN KAT  (y ≈ 980): Giriş holü, şömine salonu, mutfak koridoru
+    #   1. KAT     (y ≈ 800): Kütüphane, misafir odaları, balkon
+    #   2. KAT     (y ≈ 620): Efendi dairesi, teras, gizli oda kapısı
+    #   ÇATI       (y ≈ 440): Teras, havalandırma, çatı bacaları
+    #   GİZLİ KAT  (y ≈ 260): Gizli kasa odası (HEDEF)
+    #
+    # Harita genişliği: ~4000 px — oyuncu hem sağa hem sola hareket edebilir.
     # ──────────────────────────────────────────────────────────────────────────
     16: {
         "cameras": [
-            # ── GİRİŞ HOLÜ: 2 çapraz kamera (muhafız yok — sadece zamanlama) ──
-            {"x": 500,  "y": 970, "sweep_left": 190, "sweep_right": 290, "range": 260, "period": 3.0},
-            {"x": 720,  "y": 970, "sweep_left": 250, "sweep_right": 350, "range": 260, "period": 2.8},
-            # ── KÜTÜPHANESİ (1. Kat): 1 kamera — terminale giden yolu tarar ──
-            {"x": 900,  "y": 760, "sweep_left": 200, "sweep_right": 320, "range": 280, "period": 3.5},
-            # ── EFENDİ DAİRESİ (2. Kat): 1 kamera — parşömen rafını korur ──
-            {"x": 1900, "y": 560, "sweep_left": 185, "sweep_right": 305, "range": 260, "period": 3.0},
-            # ── KASA ODASI (Çatı): 1 kamera — kasanın tam üstünü tarar ──
-            {"x": 2720, "y": 320, "sweep_left": 190, "sweep_right": 350, "range": 230, "period": 2.5},
+            # ── ZEMİN KAT KAMERALARI ──
+            {"x": 350,  "y": 950, "sweep_left": 190, "sweep_right": 330, "range": 280, "period": 4.0},
+            {"x": 800,  "y": 950, "sweep_left": 170, "sweep_right": 310, "range": 300, "period": 3.5},
+            {"x": 1250, "y": 950, "sweep_left": 200, "sweep_right": 340, "range": 280, "period": 4.5},
+            {"x": 1700, "y": 950, "sweep_left": 180, "sweep_right": 320, "range": 290, "period": 3.8},
+            {"x": 2200, "y": 950, "sweep_left": 195, "sweep_right": 335, "range": 300, "period": 4.2},
+            {"x": 2700, "y": 950, "sweep_left": 175, "sweep_right": 315, "range": 275, "period": 3.6},
+            {"x": 3200, "y": 950, "sweep_left": 185, "sweep_right": 325, "range": 285, "period": 4.0},
+            {"x": 3700, "y": 950, "sweep_left": 200, "sweep_right": 340, "range": 280, "period": 3.5},
+            # ── 1. KAT KAMERALARI ──
+            {"x": 600,  "y": 770, "sweep_left": 200, "sweep_right": 340, "range": 260, "period": 3.0},
+            {"x": 1100, "y": 770, "sweep_left": 180, "sweep_right": 320, "range": 260, "period": 2.8},
+            {"x": 1600, "y": 770, "sweep_left": 190, "sweep_right": 330, "range": 270, "period": 3.2},
+            {"x": 2100, "y": 770, "sweep_left": 200, "sweep_right": 340, "range": 255, "period": 2.5},
+            {"x": 2600, "y": 770, "sweep_left": 185, "sweep_right": 325, "range": 265, "period": 3.0},
+            {"x": 3100, "y": 770, "sweep_left": 195, "sweep_right": 335, "range": 260, "period": 2.8},
+            {"x": 3600, "y": 770, "sweep_left": 175, "sweep_right": 315, "range": 270, "period": 3.3},
+            # ── 2. KAT KAMERALARI (daha kısa aralıklı — güvenlik yüksek) ──
+            {"x": 500,  "y": 590, "sweep_left": 200, "sweep_right": 340, "range": 250, "period": 2.5},
+            {"x": 950,  "y": 590, "sweep_left": 185, "sweep_right": 325, "range": 250, "period": 2.3},
+            {"x": 1400, "y": 590, "sweep_left": 195, "sweep_right": 335, "range": 245, "period": 2.8},
+            {"x": 1900, "y": 590, "sweep_left": 200, "sweep_right": 340, "range": 255, "period": 2.5},
+            {"x": 2400, "y": 590, "sweep_left": 180, "sweep_right": 320, "range": 250, "period": 2.2},
+            {"x": 2900, "y": 590, "sweep_left": 190, "sweep_right": 330, "range": 255, "period": 2.6},
+            {"x": 3400, "y": 590, "sweep_left": 200, "sweep_right": 340, "range": 250, "period": 2.4},
+            # ── ÇATI / GİZLİ KAT KAMERALARI ──
+            {"x": 1800, "y": 410, "sweep_left": 195, "sweep_right": 345, "range": 240, "period": 2.0},
+            {"x": 2800, "y": 410, "sweep_left": 185, "sweep_right": 335, "range": 240, "period": 1.9},
+            {"x": 3500, "y": 230, "sweep_left": 190, "sweep_right": 350, "range": 220, "period": 1.8},  # Kasanın koruması
         ],
         "guards": [
-            # ── BAHÇE: 1 muhafız geniş devriye ──
-            {"x": 200, "y": 975, "patrol_left": 60, "patrol_right": 340, "range": 240},
-            # ── KÜTÜPHANESİ (1. Kat): 1 sabit muhafız terminal önünde dönüyor ──
-            {"x": 640, "y": 765, "patrol_left": 580, "patrol_right": 720, "range": 230},
-            # ── EFENDİ DAİRESİ (2. Kat): 2 muhafız geniş devriye ──
-            {"x": 1500, "y": 565, "patrol_left": 1330, "patrol_right": 1700, "range": 240},
-            {"x": 2100, "y": 565, "patrol_left": 1900, "patrol_right": 2350, "range": 240},
-            # ── KASA ODASI (Çatı): 1 bekçi — son engel ──
-            {"x": 2700, "y": 325, "patrol_left": 2420, "patrol_right": 2870, "range": 200},
+            # ── ZEMİN KAT DEVRİYELERİ (7 muhafız) ──
+            {"x": 250,  "y": 980, "patrol_left": 100,  "patrol_right": 500,  "range": 280},
+            {"x": 700,  "y": 980, "patrol_left": 500,  "patrol_right": 1000, "range": 280},
+            {"x": 1150, "y": 980, "patrol_left": 950,  "patrol_right": 1400, "range": 280},
+            {"x": 1600, "y": 980, "patrol_left": 1400, "patrol_right": 1900, "range": 280},
+            {"x": 2100, "y": 980, "patrol_left": 1900, "patrol_right": 2400, "range": 280},
+            {"x": 2600, "y": 980, "patrol_left": 2400, "patrol_right": 2900, "range": 285},
+            {"x": 3200, "y": 980, "patrol_left": 2900, "patrol_right": 3700, "range": 285},
+            # ── 1. KAT DEVRİYELERİ (5 muhafız) ──
+            {"x": 500,  "y": 800, "patrol_left": 200,  "patrol_right": 800,  "range": 260},
+            {"x": 1100, "y": 800, "patrol_left": 800,  "patrol_right": 1400, "range": 260},
+            {"x": 1700, "y": 800, "patrol_left": 1400, "patrol_right": 2100, "range": 265},
+            {"x": 2400, "y": 800, "patrol_left": 2100, "patrol_right": 2800, "range": 260},
+            {"x": 3100, "y": 800, "patrol_left": 2800, "patrol_right": 3800, "range": 270},
+            # ── 2. KAT DEVRİYELERİ (4 muhafız — daha dar, daha keskin görüş) ──
+            {"x": 600,  "y": 620, "patrol_left": 300,  "patrol_right": 900,  "range": 250},
+            {"x": 1300, "y": 620, "patrol_left": 900,  "patrol_right": 1700, "range": 255},
+            {"x": 2100, "y": 620, "patrol_left": 1700, "patrol_right": 2600, "range": 250},
+            {"x": 2900, "y": 620, "patrol_left": 2600, "patrol_right": 3500, "range": 255},
+            # ── GİZLİ KAT BEKÇİSİ (2 muhafız — kasanın kapısı önünde sabit patroli) ──
+            {"x": 3400, "y": 440, "patrol_left": 3200, "patrol_right": 3700, "range": 220},
+            {"x": 3650, "y": 260, "patrol_left": 3500, "patrol_right": 3850, "range": 200},
         ],
         "hide_spots": [
-            # ── BAHÇE: Kasalar arkasına saklanma ──
-            {"x": 130, "y": 910, "w": 90, "h": 90, "label": "KASA ARKASI"},
-            # ── GİRİŞ HOLÜ: Kamera kör noktasında büyük perde ──
-            {"x": 450, "y": 910, "w": 110, "h": 90, "label": "BÜYÜK PERDE"},
-            # ── KÜTÜPHANESİ: Kitaplık rafı ve büyük dolap ──
-            {"x": 220,  "y": 740, "w": 100, "h": 50, "label": "KİTAP RAFI"},
-            {"x": 950,  "y": 740, "w": 100, "h": 50, "label": "BÜYÜK DOLAP"},
-            # ── EFENDİ DAİRESİ: Yatak altı ve şövale arkası ──
-            {"x": 1420, "y": 545, "w": 100, "h": 50, "label": "YATAK ALTI"},
-            {"x": 2050, "y": 545, "w": 90,  "h": 50, "label": "ŞÖVALE ARKASI"},
-            # ── KASA ODASI: Tavan köşesi ──
-            {"x": 2470, "y": 300, "w": 90,  "h": 55, "label": "TAVAN KÖŞESİ"},
+            # ── ZEMİN KAT SAKLANMA YERLERİ ──
+            {"x": 150,  "y": 890, "w": 90,  "h": 110, "label": "PERDE"},
+            {"x": 420,  "y": 890, "w": 80,  "h": 110, "label": "KANEPE ARKASI"},
+            {"x": 650,  "y": 890, "w": 100, "h": 110, "label": "ŞÖMINE KOVUĞI"},
+            {"x": 920,  "y": 890, "w": 90,  "h": 110, "label": "BÜFE DOLABI"},
+            {"x": 1180, "y": 890, "w": 85,  "h": 110, "label": "PERDE"},
+            {"x": 1450, "y": 890, "w": 95,  "h": 110, "label": "VAZO GRUBU"},
+            {"x": 1720, "y": 890, "w": 80,  "h": 110, "label": "KILER KAPISI"},
+            {"x": 2000, "y": 890, "w": 90,  "h": 110, "label": "PERDE"},
+            {"x": 2280, "y": 890, "w": 100, "h": 110, "label": "BÜYÜK VARIL"},
+            {"x": 2560, "y": 890, "w": 85,  "h": 110, "label": "MUTFAK TEZGAHI"},
+            {"x": 2830, "y": 890, "w": 90,  "h": 110, "label": "PERDE"},
+            {"x": 3100, "y": 890, "w": 95,  "h": 110, "label": "KANEPE ARKASI"},
+            {"x": 3380, "y": 890, "w": 80,  "h": 110, "label": "HALKA KASASI"},
+            {"x": 3650, "y": 890, "w": 90,  "h": 110, "label": "PERDE"},
+            # ── 1. KAT SAKLANMA YERLERİ ──
+            {"x": 300,  "y": 710, "w": 90,  "h": 100, "label": "KİTAP RAFI"},
+            {"x": 600,  "y": 710, "w": 80,  "h": 100, "label": "PERDE"},
+            {"x": 900,  "y": 710, "w": 95,  "h": 100, "label": "DOLAP"},
+            {"x": 1200, "y": 710, "w": 85,  "h": 100, "label": "BÜYÜK VAZO"},
+            {"x": 1500, "y": 710, "w": 90,  "h": 100, "label": "PERDE"},
+            {"x": 1800, "y": 710, "w": 80,  "h": 100, "label": "KOLTUK ARKASI"},
+            {"x": 2100, "y": 710, "w": 95,  "h": 100, "label": "BOYA TUVALI"},
+            {"x": 2400, "y": 710, "w": 85,  "h": 100, "label": "PERDE"},
+            {"x": 2700, "y": 710, "w": 90,  "h": 100, "label": "PİYANO ARKASI"},
+            {"x": 3000, "y": 710, "w": 80,  "h": 100, "label": "DOLAP"},
+            {"x": 3300, "y": 710, "w": 95,  "h": 100, "label": "PERDE"},
+            {"x": 3600, "y": 710, "w": 85,  "h": 100, "label": "KANEPE"},
+            # ── 2. KAT SAKLANMA YERLERİ ──
+            {"x": 400,  "y": 530, "w": 85,  "h": 100, "label": "YATAK ALTI"},
+            {"x": 700,  "y": 530, "w": 80,  "h": 100, "label": "PERDE"},
+            {"x": 1000, "y": 530, "w": 90,  "h": 100, "label": "GARDROP"},
+            {"x": 1350, "y": 530, "w": 85,  "h": 100, "label": "PERDE"},
+            {"x": 1700, "y": 530, "w": 80,  "h": 100, "label": "ŞÖVALE ARKASI"},
+            {"x": 2050, "y": 530, "w": 90,  "h": 100, "label": "GARDROP"},
+            {"x": 2400, "y": 530, "w": 85,  "h": 100, "label": "PERDE"},
+            {"x": 2750, "y": 530, "w": 80,  "h": 100, "label": "BÜYÜK BAVUL"},
+            {"x": 3100, "y": 530, "w": 90,  "h": 100, "label": "PERDE"},
+            {"x": 3450, "y": 530, "w": 85,  "h": 100, "label": "DOLAP"},
+            # ── GİZLİ KAT SAKLANMA YERLERİ (az ama kritik) ──
+            {"x": 1700, "y": 360, "w": 90,  "h": 90,  "label": "HAVALANDIRMA BACASI"},
+            {"x": 2500, "y": 360, "w": 80,  "h": 90,  "label": "TAVAN BOŞLUĞU"},
+            {"x": 3200, "y": 180, "w": 100, "h": 90,  "label": "KASA ODASI DOLABI"},
         ],
     },
 }

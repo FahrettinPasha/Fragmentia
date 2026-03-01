@@ -402,7 +402,8 @@ STAGE_DEFS: List[Dict[str, Any]] = [
 
     # ── STAGE 8: EGEMENLERİN MALİKANESİ ──────────────────────────────────
     # Bölüm 16 — manor_stealth tipi
-    # 4 adımlı senaryo: Bahçe → Terminal → Şifre → Kasa
+    # Çıkış koşulu: "area_reached" → Gizli kasanın koordinatlarına ulaşmak.
+    # Skor veya süre değil — sadece fiziksel konum tetikler.
     {
         "stage_id": 8,
         "name": "EGEMENLERİN MALİKANESİ — SIZMA",
@@ -411,28 +412,28 @@ STAGE_DEFS: List[Dict[str, Any]] = [
         "theme_index": 6,   # MALİKANE teması
         "objectives": [
             {
-                "obj_id": "cross_garden_wall",
-                "text": "1) Bahçe duvarını havalandırma deliğinden aş",
+                "obj_id": "infiltrate_manor",
+                "text": "Malikaneye sız",
                 "optional": False
             },
             {
-                "obj_id": "hack_terminal",
-                "text": "2) Kütüphanedeki güvenlik terminalini hackle (E)",
-                "optional": False
-            },
-            {
-                "obj_id": "find_scroll",
-                "text": "3) Efendi dairesinden Kasa Şifresini al (E)",
+                "obj_id": "eliminate_guards",
+                "text": "Tüm muhafızları sessizce avla",
                 "optional": False
             },
             {
                 "obj_id": "find_secret_safe",
-                "text": "4) Gizli Kasaya ulaş",
+                "text": "Gizli Kasayı bul",
                 "optional": False
             },
             {
                 "obj_id": "stealth_optional_no_alert",
                 "text": "[OPSİYONEL] Hiç alarm vermeden geç (+15 Karma)",
+                "optional": True
+            },
+            {
+                "obj_id": "optional_intel_scroll",
+                "text": "[OPSİYONEL] Efendi'nin gizli yazışmalarını oku",
                 "optional": True
             },
         ],
@@ -441,7 +442,7 @@ STAGE_DEFS: List[Dict[str, Any]] = [
                 "event_type": "DIALOGUE",
                 "payload": {
                     "speaker": "SİSTEM",
-                    "text": "EGEMEN MALİKANESİ — 5 KROM MUHAFIZ, 5 KAMERA. GİZLİLİK ZARURİ.",
+                    "text": "EGEMEN MALİKANESİ ALGILAMA ŞEBEKESİ: AKTİF. 18 KROM MUHAFIZ. 25 KAMERA.",
                     "is_cutscene": True
                 }
             },
@@ -449,7 +450,7 @@ STAGE_DEFS: List[Dict[str, Any]] = [
                 "event_type": "DIALOGUE",
                 "payload": {
                     "speaker": "SOKRAT",
-                    "text": "Bahçe duvarını gördün mü? Kasalar üzerinden zıpla, duvardaki deliği bul.",
+                    "text": "Gizli kasada şehrin yönetim şifreleri var. Ama içerisi bir labirent — ve her köşede bir gölge.",
                     "is_cutscene": False
                 }
             },
@@ -457,21 +458,17 @@ STAGE_DEFS: List[Dict[str, Any]] = [
                 "event_type": "DIALOGUE",
                 "payload": {
                     "speaker": "SOKRAT",
-                    "text": "İçeri girince hedef: kütüphanedeki terminal. E tuşu hackler, kapı açılır.",
+                    "text": "F tuşu: Arkadan sessiz suikast. Ama unutma — muhafız seni fark etmişse çalışmaz.",
                     "is_cutscene": False
                 }
             },
             {
                 "event_type": "OBJECTIVE_ADD",
-                "payload": {"obj_id": "cross_garden_wall"}
+                "payload": {"obj_id": "infiltrate_manor"}
             },
             {
                 "event_type": "OBJECTIVE_ADD",
-                "payload": {"obj_id": "hack_terminal"}
-            },
-            {
-                "event_type": "OBJECTIVE_ADD",
-                "payload": {"obj_id": "find_scroll"}
+                "payload": {"obj_id": "eliminate_guards"}
             },
             {
                 "event_type": "OBJECTIVE_ADD",
@@ -507,11 +504,17 @@ STAGE_DEFS: List[Dict[str, Any]] = [
                 option_b_tag="INTEL_SAVED",
             ),
         },
-        # ── ÇIKIŞ KOŞULU: area_reached — oyuncu kasaya ulaşınca ──────────
-        # main.py her karede _flags["area_secret_safe"] değerini kontrol eder.
+        # ── ÇIKIŞ KOŞULU: SKOR VEYA SÜRE DEĞİL ──────────────────────────
+        # "area_reached" → main.py her karede şu kontrolü yapar:
+        #   if mission_manager.check_area("secret_safe"):
+        #       → bölüm tamamlandı
+        # MissionManager._check_exit() içindeki "area_reached" dalı bunu karşılar:
+        #   self._flags.get("area_secret_safe", False)
+        # main.py, oyuncunun koordinatları gizli kasaya (3600, 380) yeterince
+        # yaklaştığında set_flag("area_secret_safe", True) çağırır.
         "exit_condition": "area_reached",
-        "exit_value": "secret_safe",
-        "exit_to_stage": -1,
+        "exit_value": "secret_safe",   # _flags["area_secret_safe"] anahtarı
+        "exit_to_stage": -1,            # Bölüm tamamlandı → Nexus yoluna devam
     },
 ]
 
