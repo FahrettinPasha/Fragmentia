@@ -359,6 +359,51 @@ class InventoryManager:
             return 0
         return self._slots[weapon_type].add_spare_mag(count)
 
+    def chest_add_ammo(self, weapon_type: str) -> dict:
+        """
+        Sandıktan aynı silahın tekrar alınması için atomik metod.
+
+        Sorun: add_spare_mag() sadece weapon_obj'i güncelliyor, slot 0 kalıyor.
+        Sonraki switch_to() çağrısında slot → weapon_obj yazılınca her şey sıfırlanıyor.
+
+        Bu metod slot + weapon_obj'i tek seferde günceller:
+          1. Slot'a +1 yedek şarjör ekle
+          2. Şarjör boşsa hemen doldur (otomatik reload, R'ya basmak gerekmez)
+          3. weapon_obj'i slot'la senkronize et
+
+        Döner: {'bullets': int, 'spare_mags': int, 'was_empty': bool}
+        """
+        slot = self._slots.get(weapon_type)
+        if slot is None:
+            return {'bullets': 0, 'spare_mags': 0, 'was_empty': False}
+
+        # Slot'a +1 yedek şarjör ekle
+        slot.add_spare_mag(1)
+
+        # Şarjör boşsa hemen doldur — eklediğimiz şarjörü kullan
+        was_empty = False
+        if slot.current_mag <= 0 and slot.spare_mags > 0:
+            slot.spare_mags  -= 1
+            slot.current_mag  = slot.mag_size
+            was_empty = True
+
+        # weapon_obj'i slot ile senkronize et
+        wobj = self._weapon_objects.get(weapon_type)
+        if wobj is not None:
+            try:
+                wobj.bullets      = slot.current_mag
+                wobj.spare_mags   = slot.spare_mags
+                wobj.is_reloading = False
+                wobj.cooldown     = 0.0
+            except AttributeError:
+                pass
+
+        return {
+            'bullets':    slot.current_mag,
+            'spare_mags': slot.spare_mags,
+            'was_empty':  was_empty,
+        }
+
     # ── Sorgu API'si ──────────────────────────────────────────────────────────
 
     @property

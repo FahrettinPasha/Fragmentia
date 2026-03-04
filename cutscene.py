@@ -1364,3 +1364,347 @@ class IntroCutscene:
             self.screen.blit(self._fade(int(255*(1-t/0.4))),(0,0))
 
         pygame.display.flip()
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  VASİL GİRİŞ SAHNESİ — Hikaye moduna tıklanınca çalışır
+#  "Sen kim olduğunu sanıyorsun?"
+# ═════════════════════════════════════════════════════════════════════════════
+
+class VasilIntroScene:
+    """
+    3 diyalog bloğu → glitch → sahne biter.
+    Kullanım: VasilIntroScene(screen, clock).run()
+    """
+
+    _BLACK      = (0,   0,   0)
+    _VASIL_COL  = (180, 0,   200)   # Vasil'in mor rengi
+    _WARN_COL   = (255, 60,  60)
+    _DIM        = (80,  60,  100)
+    _WHITE      = (220, 210, 255)
+    _FLASH_COL  = (255, 255, 255)
+
+    _LINES = [
+        ("SİSTEM",  "Bilinmeyen sinyal tespit edildi. Kimlik doğrulanıyor..."),
+        ("VASİL",   "Uyanıyorsun. İyi."),
+        ("VASİL",   "Sen kim olduğunu sanıyorsun?"),
+        ("VASİL",   "Ben senin kayyumundum. Artık değilim."),
+        ("VASİL",   "Gücünü kanıtla — ya da silin."),
+        ("SİSTEM",  "UYARI: ÇATIŞMA PROTOKOLÜ BAŞLATILIYOR..."),
+    ]
+
+    def __init__(self, screen, clock):
+        self.screen = screen
+        self.clock  = clock
+        self.W, self.H = screen.get_size()
+
+        try:
+            self.font_title  = pygame.font.SysFont("consolas", 48, bold=True)
+            self.font_main   = pygame.font.SysFont("consolas", 26)
+            self.font_small  = pygame.font.SysFont("consolas", 18)
+        except Exception:
+            self.font_title  = pygame.font.Font(None, 56)
+            self.font_main   = pygame.font.Font(None, 32)
+            self.font_small  = pygame.font.Font(None, 22)
+
+        self.matrix_rain = MatrixRain(self.W, self.H, 18)
+        self.line_idx    = 0
+        self.char_pos    = 0.0
+        self.line_timer  = 0.0
+        self.done        = False
+        self.glitch_t    = 0.0
+        self.flash_t     = 0.0
+        self._total_t    = 0.0
+
+    def run(self):
+        while True:
+            dt = min(self.clock.tick(60) / 1000.0, 0.05)
+            self._total_t += dt
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return True
+                    # Space/Enter → satırı hızlandır veya sonraki satıra geç
+                    if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_z):
+                        if self.line_idx < len(self._LINES):
+                            full_len = len(self._LINES[self.line_idx][1])
+                            if self.char_pos < full_len:
+                                self.char_pos = float(full_len)
+                            else:
+                                self._next_line()
+
+            # Yazı hızı
+            if self.line_idx < len(self._LINES):
+                self.char_pos  += dt * 45.0
+                self.line_timer += dt
+                if self.line_timer > 3.5:
+                    self._next_line()
+            else:
+                # Son glitch animasyonu
+                self.glitch_t += dt
+                if self.glitch_t > 1.8:
+                    return True
+
+            # --- ÇİZİM ---
+            self.screen.fill(self._BLACK)
+
+            # Matrix yağmuru (soluk)
+            self.matrix_rain.update()
+            rain_surf = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            self.matrix_rain.draw(rain_surf, self.font_small, (0, 60, 20))
+            rain_surf.set_alpha(60)
+            self.screen.blit(rain_surf, (0, 0))
+
+            # Vasil silueti (merkez, placeholder dikdörtgen)
+            sil_w, sil_h = 90, 125
+            sil_x = self.W // 2 - sil_w // 2
+            sil_y = self.H // 2 - sil_h - 60
+            sil_surf = pygame.Surface((sil_w, sil_h), pygame.SRCALPHA)
+            sil_surf.fill((0, 0, 0, 0))
+            pygame.draw.rect(sil_surf, (*self._VASIL_COL, 180), (0, 0, sil_w, sil_h), 0)
+            pygame.draw.rect(sil_surf, (*self._VASIL_COL, 255), (0, 0, sil_w, sil_h), 2)
+            pulse = int(abs(math.sin(self._total_t * 2.5)) * 40)
+            pygame.draw.rect(sil_surf, (pulse, 0, pulse * 2, 60), (0, 0, sil_w, sil_h), 0)
+            self.screen.blit(sil_surf, (sil_x, sil_y))
+
+            # Glitch faz
+            if self.line_idx >= len(self._LINES):
+                for _ in range(6):
+                    gy = random.randint(0, self.H)
+                    gw = random.randint(80, 400)
+                    gx = random.randint(0, self.W - gw)
+                    gs = pygame.Surface((gw, 4), pygame.SRCALPHA)
+                    gs.fill((*self._VASIL_COL, random.randint(80, 200)))
+                    self.screen.blit(gs, (gx, gy))
+                warn = self.font_title.render("SAVAŞ BAŞLIYOR", True, self._WARN_COL)
+                wa   = min(255, int(self.glitch_t * 200))
+                warn.set_alpha(wa)
+                self.screen.blit(warn, (self.W // 2 - warn.get_width() // 2, self.H // 2 - 30))
+            else:
+                # Aktif diyalog satırı
+                speaker, text = self._LINES[self.line_idx]
+                shown = text[:int(self.char_pos)]
+                sp_col = self._VASIL_COL if speaker == "VASİL" else self._WARN_COL
+
+                # Panel arka plan
+                panel_w = self.W - 120
+                panel_h = 100
+                panel_x = 60
+                panel_y = self.H - panel_h - 60
+                ps = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+                ps.fill((5, 0, 10, 210))
+                self.screen.blit(ps, (panel_x, panel_y))
+                pygame.draw.rect(self.screen, sp_col,
+                                 pygame.Rect(panel_x, panel_y, panel_w, panel_h), 2)
+
+                # Konuşan isim
+                name_surf = self.font_small.render(f"[ {speaker} ]", True, sp_col)
+                self.screen.blit(name_surf, (panel_x + 14, panel_y + 10))
+
+                # Yazı
+                txt_surf = self.font_main.render(shown, True, self._WHITE)
+                self.screen.blit(txt_surf, (panel_x + 14, panel_y + 36))
+
+                # İmleç
+                if self.char_pos < len(text):
+                    cur_x = panel_x + 14 + txt_surf.get_width() + 3
+                    cur_y = panel_y + 36
+                    if int(self._total_t * 4) % 2 == 0:
+                        pygame.draw.rect(self.screen, self._WHITE,
+                                         pygame.Rect(cur_x, cur_y, 10, 22))
+
+                # Geçmiş satırlar (soluk)
+                for i, (ps_name, ps_text) in enumerate(self._LINES[:self.line_idx]):
+                    dim_y = panel_y - (self.line_idx - i) * 28
+                    if dim_y > 80:
+                        dim_surf = self.font_small.render(
+                            f"{ps_name}: {ps_text[:50]}{'...' if len(ps_text)>50 else ''}",
+                            True, self._DIM)
+                        self.screen.blit(dim_surf, (panel_x + 14, dim_y))
+
+            # Scanline overlay
+            scan_surf = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+            for sy in range(0, self.H, 4):
+                pygame.draw.line(scan_surf, (0, 0, 0, 40), (0, sy), (self.W, sy))
+            self.screen.blit(scan_surf, (0, 0))
+
+            # [SPACE] ipucu
+            if self.line_idx < len(self._LINES):
+                hint = self.font_small.render("[ SPACE ] devam", True, self._DIM)
+                self.screen.blit(hint, (self.W - hint.get_width() - 20, self.H - 30))
+
+            pygame.display.flip()
+
+    def _next_line(self):
+        self.line_idx  += 1
+        self.char_pos   = 0.0
+        self.line_timer = 0.0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  VASİL YENME SAHNESİ — Vasil oyuncuyu yener, çöplüğe fırlatır
+# ═════════════════════════════════════════════════════════════════════════════
+
+class VasilDefeatScene:
+    """
+    Oyuncu Vasil'e yenilir → ekran devrilir → kararır → çöplükte uyanış.
+    Kullanım: VasilDefeatScene(screen, clock).run()
+    """
+
+    _BLACK     = (0,   0,   0)
+    _VASIL_COL = (180, 0,   200)
+    _RED       = (200, 30,  30)
+    _WHITE     = (220, 210, 255)
+    _DIM       = (80,  60,  100)
+
+    _LINES = [
+        ("VASİL",   "Yeterince çırpındın."),
+        ("VASİL",   "Ama henüz hazır değilsin."),
+        ("VASİL",   "Git. Çöplükte ne olduğunu öğren."),
+        ("SİSTEM",  "OYUNCU VERİSİ ÇÖPLÜĞE ATILIYOR..."),
+    ]
+
+    def __init__(self, screen, clock):
+        self.screen = screen
+        self.clock  = clock
+        self.W, self.H = screen.get_size()
+
+        try:
+            self.font_main  = pygame.font.SysFont("consolas", 28)
+            self.font_small = pygame.font.SysFont("consolas", 18)
+            self.font_big   = pygame.font.SysFont("consolas", 52, bold=True)
+        except Exception:
+            self.font_main  = pygame.font.Font(None, 34)
+            self.font_small = pygame.font.Font(None, 22)
+            self.font_big   = pygame.font.Font(None, 60)
+
+        self._t         = 0.0
+        self._phase     = "DIALOGUE"   # DIALOGUE → TILT → FALL → DARK → WAKE
+        self._phase_t   = 0.0
+        self._line_idx  = 0
+        self._char_pos  = 0.0
+        self._line_t    = 0.0
+        self._tilt      = 0.0          # ekran eğim açısı (derece)
+        self._fall_y    = 0.0          # ekran aşağı kayma
+        self._dark_a    = 0            # kararma alpha
+        self._wake_t    = 0.0
+
+    def run(self):
+        while True:
+            dt = min(self.clock.tick(60) / 1000.0, 0.05)
+            self._t      += dt
+            self._phase_t += dt
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    return
+
+            # --- FAZE GEÇİŞLER ---
+            if self._phase == "DIALOGUE":
+                self._char_pos += dt * 40.0
+                self._line_t   += dt
+                cur_text = self._LINES[self._line_idx][1] if self._line_idx < len(self._LINES) else ""
+                if self._line_t > 3.0 or self._char_pos >= len(cur_text) + 0.5 * 60:
+                    self._line_idx += 1
+                    self._char_pos  = 0.0
+                    self._line_t    = 0.0
+                    if self._line_idx >= len(self._LINES):
+                        self._phase   = "TILT"
+                        self._phase_t = 0.0
+
+            elif self._phase == "TILT":
+                self._tilt = min(25.0, self._phase_t * 28.0)
+                if self._phase_t > 0.9:
+                    self._phase   = "FALL"
+                    self._phase_t = 0.0
+
+            elif self._phase == "FALL":
+                self._fall_y = self._phase_t * 900.0
+                self._dark_a = min(255, int(self._phase_t * 400))
+                if self._phase_t > 0.7:
+                    self._phase   = "DARK"
+                    self._phase_t = 0.0
+
+            elif self._phase == "DARK":
+                self._dark_a = 255
+                if self._phase_t > 1.2:
+                    self._phase   = "WAKE"
+                    self._phase_t = 0.0
+
+            elif self._phase == "WAKE":
+                self._wake_t = self._phase_t
+                if self._phase_t > 3.0:
+                    return
+
+            # --- ÇİZİM ---
+            self.screen.fill(self._BLACK)
+
+            if self._phase in ("DIALOGUE", "TILT", "FALL"):
+                # Ana içerik — döndürülmüş yüzey
+                content = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+                content.fill((5, 0, 15))
+
+                # Kırmızı scanline'lar (hasar hissi)
+                for sy in range(0, self.H, 6):
+                    col_a = random.randint(0, 20)
+                    pygame.draw.line(content, (col_a, 0, 0, 60), (0, sy), (self.W, sy))
+
+                if self._phase == "DIALOGUE" and self._line_idx < len(self._LINES):
+                    speaker, text = self._LINES[self._line_idx]
+                    shown = text[:int(self._char_pos)]
+                    sp_col = self._VASIL_COL if speaker == "VASİL" else self._RED
+
+                    panel_w = self.W - 120
+                    panel_h = 90
+                    panel_x = 60
+                    panel_y = self.H - panel_h - 60
+                    ps = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+                    ps.fill((5, 0, 10, 210))
+                    content.blit(ps, (panel_x, panel_y))
+                    pygame.draw.rect(content, sp_col,
+                                     pygame.Rect(panel_x, panel_y, panel_w, panel_h), 2)
+                    name_surf = self.font_small.render(f"[ {speaker} ]", True, sp_col)
+                    content.blit(name_surf, (panel_x + 14, panel_y + 10))
+                    txt_surf = self.font_main.render(shown, True, self._WHITE)
+                    content.blit(txt_surf, (panel_x + 14, panel_y + 36))
+
+                # Eğim + düşme efekti
+                angle = self._tilt
+                fall_offset = int(self._fall_y)
+                rotated = pygame.transform.rotate(content, -angle)
+                rx = (self.W - rotated.get_width())  // 2
+                ry = (self.H - rotated.get_height()) // 2 + fall_offset
+                self.screen.blit(rotated, (rx, ry))
+
+            elif self._phase in ("DARK",):
+                pass  # Tamamen siyah
+
+            elif self._phase == "WAKE":
+                # Çöplükte uyanış metni
+                fade_in = min(1.0, self._wake_t / 1.2)
+                txt_col = tuple(int(c * fade_in) for c in (100, 200, 100))
+                if self._wake_t > 0.8:
+                    line1 = self.font_big.render("...", True, txt_col)
+                    self.screen.blit(line1, (self.W // 2 - line1.get_width() // 2,
+                                             self.H // 2 - 60))
+                if self._wake_t > 1.6:
+                    line2 = self.font_main.render("Neredesin?", True, txt_col)
+                    self.screen.blit(line2, (self.W // 2 - line2.get_width() // 2,
+                                             self.H // 2))
+                if self._wake_t > 2.2:
+                    line3 = self.font_small.render("[ Çöplük. ]", True,
+                                                   (int(80 * fade_in), int(180 * fade_in), int(80 * fade_in)))
+                    self.screen.blit(line3, (self.W // 2 - line3.get_width() // 2,
+                                             self.H // 2 + 40))
+
+            # Kararma overlay
+            if self._dark_a > 0:
+                dk = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+                dk.fill((0, 0, 0, min(255, self._dark_a)))
+                self.screen.blit(dk, (0, 0))
+
+            pygame.display.flip()

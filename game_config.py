@@ -34,6 +34,18 @@ EASY_MODE_LEVELS.update({
     }
 })
 
+# --- BÖLÜM 0: VASIL GİRİŞ DÖVÜŞÜ ---
+# Oyuncu her zaman kaybeder — bu bölüm hikayenin açılışıdır.
+EASY_MODE_LEVELS[0] = {
+    'name': 'BAŞLANGIÇ: VASİL\'İN SINAVI',
+    'goal_score': 0,
+    'speed_mult': 0.0,
+    'theme_index': 1,
+    'type': 'intro_boss',
+    'music_file': 'final_boss.mp3',
+    'no_enemies': True,
+}
+
 # --- BÖLÜM 10 AYARI ---
 EASY_MODE_LEVELS[10] = {
     'name': 'YARGI GÜNÜ (Bölüm 10)',

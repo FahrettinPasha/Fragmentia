@@ -1030,13 +1030,16 @@ class PlayerProjectile(pygame.sprite.Sprite):
     # ------------------------------------------------------------------
     def update(self, camera_speed=0, dt: float = 0.016):
         """Mermiyi hareket ettir; ekran dışına çıkınca kendini yok et."""
+        # Rule 1: frame_mul ile dt bazlı hareket — FPS'ten bağımsız
+        frame_mul = dt * 60.0
+
         # İz listesini güncelle
         self._trail.append((self.rect.centerx, self.rect.centery))
         if len(self._trail) > 4:
             self._trail.pop(0)
 
-        self.rect.x += int(self.vx)
-        self.rect.y += int(self.vy)
+        self.rect.x += int(self.vx * frame_mul)
+        self.rect.y += int(self.vy * frame_mul)
 
         # Ekran dışı kontrolü (yatay + dikey)
         if (self.rect.left > LOGICAL_WIDTH or self.rect.right < 0

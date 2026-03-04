@@ -69,6 +69,11 @@ class WeaponBase:
     is_automatic  : bool = False
     damage        : int  = 0
 
+    # ── Mermi hurtbox yarıçapı (piksel) ─────────────────────────────────────
+    # main.py'nin CCD döngüsü bu değeri okuyarak fat-hitbox oluşturur.
+    # Alt sınıflar kendi değerini override eder.
+    BULLET_RADIUS : int  = 6
+
     def __init__(self, mag_size: int, max_spare: int, cooldown_time: float,
                  reload_time: float):
         self.mag_size        = mag_size
@@ -188,6 +193,70 @@ class WeaponBase:
             return self.visual.get_muzzle_point(cx, cy, angle, shoot_timer)
         return (int(cx), int(cy))
 
+    # ── Trajectory ızgara noktaları (UI katmanı için) ────────────────────────
+
+    def get_trajectory_grid_points(
+        self,
+        muzzle_x: float,
+        muzzle_y: float,
+        aim_angle: float,
+        step_px: int   = 45,
+        total_px: int  = 320,
+    ) -> dict:
+        """
+        Mermi yolu ızgarasının çizim noktalarını hesaplar.
+
+        Döndürür:
+            {
+              'center' : [(x,y), ...],           # Merkez çizgisi nokta dizisi
+              'upper'  : [(x,y), ...],           # Üst spread sınırı
+              'lower'  : [(x,y), ...],           # Alt spread sınırı
+              'rungs'  : [((x1,y1),(x2,y2)),...] # Enine "rung" çizgi çiftleri
+              'spread' : float,                  # Hesaplamada kullanılan spread
+            }
+
+        Kurallar (Rule 3):
+            Bu metot import'lar dahil HİÇBİR yeni obje yaratmaz; sadece
+            int/float hesaplamaları ve tuple döndürür. Pygame surface veya
+            list comprehension kullanılmaz.
+        """
+        import math as _m
+        spread = self.current_spread
+
+        steps      = max(1, total_px // step_px)
+        center_pts = []
+        upper_pts  = []
+        lower_pts  = []
+        rungs      = []
+
+        for i in range(steps + 1):
+            d  = i * step_px
+            cx = int(muzzle_x + _m.cos(aim_angle) * d)
+            cy = int(muzzle_y + _m.sin(aim_angle) * d)
+            center_pts.append((cx, cy))
+
+            if spread > 0.001:
+                ux = int(muzzle_x + _m.cos(aim_angle - spread) * d)
+                uy = int(muzzle_y + _m.sin(aim_angle - spread) * d)
+                lx = int(muzzle_x + _m.cos(aim_angle + spread) * d)
+                ly = int(muzzle_y + _m.sin(aim_angle + spread) * d)
+                upper_pts.append((ux, uy))
+                lower_pts.append((lx, ly))
+                if i > 0:
+                    rungs.append(((ux, uy), (lx, ly)))
+            else:
+                # Spread sıfır: sınır noktaları merkez ile özdeş
+                upper_pts.append((cx, cy))
+                lower_pts.append((cx, cy))
+
+        return {
+            'center': center_pts,
+            'upper' : upper_pts,
+            'lower' : lower_pts,
+            'rungs' : rungs,
+            'spread': spread,
+        }
+
     # ── Auto-fire desteği (SMG override eder) ────────────────────────────────
 
     def can_auto_fire(self, dt: float) -> bool:
@@ -219,6 +288,7 @@ class Revolver(WeaponBase):
     WEAPON_TYPE  = "revolver"
     is_automatic = False
     damage       = REVOLVER_DAMAGE
+    BULLET_RADIUS = 7   # Altıpatar: ağır mermi → biraz daha geniş hurtbox
 
     # Sabır eşiği ve panik spread değeri
     _PATIENCE_THRESHOLD  : float = 3.0   # sn — bu kadar bekleyince tam isabet
@@ -320,6 +390,7 @@ class SMG(WeaponBase):
     WEAPON_TYPE  = "smg"
     is_automatic = True
     damage       = SMG_DAMAGE
+    BULLET_RADIUS = 5   # SMG: küçük kalibre, orta hurtbox
 
     # Burst parametreleri
     _BURST_FREE_SHOTS    : int   = 5     # Bu kadar mermi sıfır spread
@@ -448,6 +519,7 @@ class Shotgun(WeaponBase):
     WEAPON_TYPE  = "shotgun"
     is_automatic = False
     damage       = SHOTGUN_DAMAGE
+    BULLET_RADIUS = 8   # Pompalı saçma: geniş hurtbox, yakın mesafe terörü
 
     # Saçma sayısı ve koni — main.py bu değerleri okur
     PELLET_COUNT  : int   = SHOTGUN_PELLET_COUNT

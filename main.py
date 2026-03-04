@@ -30,18 +30,19 @@ from auxiliary_systems import CombatPhilosophySystem, LivingSoundtrack, EndlessF
 from auxiliary_systems import FragmentiaDistrict, PhilosophicalTitan, WarpLine
 from drawing_utils import rotate_point, draw_legendary_revolver, draw_smg_placeholder, draw_cinematic_overlay, draw_background_hero, get_weapon_muzzle_point
 from drawing_utils import draw_background_boss_silhouette, draw_npc_chat
-from local_bosses import NexusBoss, AresBoss, VasilBoss, EnemyBullet
+from local_bosses import NexusBoss, AresBoss, VasilBoss, EnemyBullet, draw_vasil_arena_bg
 
 # --- GÜNCEL UTILS IMPORT (audio_manager eklendi) ---
 from utils import generate_sound_effect, generate_ambient_fallback, generate_calm_ambient, load_sound_asset, draw_text, draw_animated_player, wrap_text, draw_text_with_shadow, get_silent_sound, audio_manager
 from vfx import LightningBolt, FlameSpark, GhostTrail, SpeedLine, Shockwave, EnergyOrb, ParticleExplosion, ScreenFlash, SavedSoul
+from bullet_visuals import draw_player_bullet
 # YENİ: ParallaxBackground eklendi (BlankBackground yerine)
 from entities import BlankBackground, ParallaxBackground, Platform, Star, CursedEnemy, NPC, DroneEnemy, TankEnemy, HealthOrb, PlayerProjectile, WeaponChest, AmmoPickup
 from ui_system import render_ui
 from animations import CharacterAnimator, TrailEffect
 from save_system import SaveManager
 from story_system import StoryManager
-from cutscene import AICutscene, IntroCutscene  # ← DEĞİŞİKLİK 1: IntroCutscene eklendi
+from cutscene import AICutscene, IntroCutscene, VasilDefeatScene
 
 # --- BEAT 'EM UP / DÖVÜŞ SİSTEMİ ---
 from combat_system import (
@@ -98,6 +99,7 @@ clock = pygame.time.Clock()
 
 game_canvas = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT))
 vfx_surface = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT), pygame.SRCALPHA)
+_traj_surface = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT), pygame.SRCALPHA)  # Trajectory ızgara
 
 # --- 2. SES AYARLARI ---
 # Ses kanalları artık audio_manager üzerinden yönetiliyor.
@@ -119,6 +121,7 @@ METEOR_FIRE = (255, 80, 0)
 # --- 3. DURUM DEĞİŞKENLERİ ---
 GAME_STATE = 'MENU'
 vasil_companion = None
+vasil_intro_kill_pending = False  # VasilBoss.kill_player sinyali
 active_background = None # YENİ: Global Arka Plan Değişkeni (Eski city_bg)
 
 # Varsayılan ayarlar (sadece ilk çalıştırma için)
@@ -217,6 +220,9 @@ all_ammo_pickups  = pygame.sprite.Group()  # Cephane pickup'ları
 # inventory_weapons : Kuşanılmış silahların türlerini tutan liste (switch için)
 active_weapon_obj  = None      # Başlangıçta silahsız
 inventory_weapons  = []        # Açılmış silahlar listesi
+# Ölüm anında envanterin anlık görüntüsü — respawn'da geri yüklenir
+_death_inventory_snapshot: list = []   # [(weapon_type, bullets, spare_mags), ...]
+_death_active_type: str | None  = None
 weapon_shoot_timer = 0.0       # Çizim için atış zamanı sayacı (sn)
 aim_angle          = 0.0       # Fare nişangah açısı (radyan) — her frame güncellenir
 stars = [Star(LOGICAL_WIDTH, LOGICAL_HEIGHT) for _ in range(120)]
@@ -388,6 +394,66 @@ def init_rest_area():
     center_x = (npc_spawn_index * (platform_width + gap)) + 200
     center_platform = Platform(center_x, LOGICAL_HEIGHT - 150, 600, 60, theme_index=4)
     all_platforms.add(center_platform)
+
+def init_vasil_intro_fight():
+    """Level 0: Vasil intro boss fight. Oyuncu silahsız, Vasil yenilemez."""
+    global player_x, player_y, y_velocity, camera_speed, CURRENT_THEME
+    global all_platforms, all_enemies, all_vfx, npcs, current_level_idx
+    global active_background, boss_manager_system
+    global active_weapon_obj, inventory_weapons, player_bullets
+    global gun_cooldown, is_reloading, vasil_intro_kill_pending
+
+    boss_manager_system.reset()
+    current_level_idx = 0
+    camera_speed = 0
+    y_velocity   = 0
+
+    all_platforms.empty()
+    all_enemies.empty()
+    all_vfx.empty()
+    npcs.clear()
+
+    CURRENT_THEME = THEMES[1]
+
+    # ═══════════════════════════════════════════════════════════════════
+    # VASİL INTRO ARENA — Sonsuz düz zemin
+    # camera_speed = 0 ama oyuncu X ekseninde serbestçe hareket eder.
+    # Dünya genişliği: LOGICAL_WIDTH * 6  →  Pratik olarak sonsuz.
+    # Boss player'ı lerp ile takip eder (aşağıda game loop'ta).
+    # ═══════════════════════════════════════════════════════════════════
+
+    LW = LOGICAL_WIDTH
+    LH = LOGICAL_HEIGHT
+    TH = 1
+
+    # ── Tek düz sonsuz zemin platformu ───────────────────────────────
+    all_platforms.add(Platform(-LW * 3, LH - 80, LW * 6, 80, theme_index=TH))
+
+    active_background = ParallaxBackground(f"{BG_DIR}/gutter_far.png", speed_mult=0.0)
+
+    player_x, player_y = 180.0, float(LOGICAL_HEIGHT - 80 - 42)  # Düz zemin üstü
+    # ── VASIL INTRO: Tüm silahları 5'er yedek şarjörle ver ──────────────────
+    # Oyuncu elinden geleni yapacak ama boss yine de yenilemez.
+    inventory_manager.reset()
+    inventory_weapons = []           # Legacy referans — korunuyor
+    gun_cooldown      = 0.0
+    is_reloading      = False
+    for _intro_wtype in ['revolver', 'smg', 'shotgun']:
+        _intro_wpn = create_weapon(_intro_wtype, spare_mags=5)
+        if _intro_wpn:
+            inventory_manager.unlock(_intro_wtype, _intro_wpn)
+    inventory_manager.switch_to('revolver')
+    active_weapon_obj = inventory_manager.active_weapon
+    player_bullets    = active_weapon_obj.bullets if active_weapon_obj else 0
+
+    vasil = VasilBoss(LOGICAL_WIDTH // 2, LOGICAL_HEIGHT - 80 - 130)  # Düz zemin üstünde hover
+    vasil.ignore_camera_speed = True
+    all_enemies.add(vasil)
+    vasil_intro_kill_pending = False
+
+    music = load_sound_asset("assets/music/final_boss.mp3", generate_ambient_fallback, 0.8)
+    audio_manager.play_music(music)
+
 
 def init_limbo():
     global player_x, player_y, y_velocity, camera_speed, CURRENT_THEME
@@ -901,17 +967,21 @@ def run_game_loop():
     global active_background
     global cached_ui_surface, last_score, last_active_ui_elements
     global combo_system, beat_arena, player_hp, combat_hud
+    global vasil_intro_kill_pending
     global player_bullets, gun_cooldown, is_reloading, all_player_projectiles
     global active_weapon_obj, inventory_weapons, weapon_shoot_timer
     global all_weapon_chests, all_ammo_pickups
     global aim_angle
 
-    is_super_mode = False
+    is_super_mode  = False
+    is_god_hp      = False   # "god hp on"   → her kare canı tam doldur
+    is_god_stamina = False   # "god stam on" → her kare staminayı tam doldur
     # Malikane bölümü için kamera X ve Y ofseti (oyuncuyu ekranın ortasında tutar)
     manor_camera_offset_x = 0
     manor_camera_offset_y = 0
     terminal_input = ""
     terminal_status = "KOMUT BEKLENİYOR..."
+    terminal_prev_state = 'MENU'  # Terminal kapanınca dönülecek state
     active_ui_elements = {}
 
     # Oyuncunun baktığı yön (+1 sağ, -1 sol).
@@ -1114,14 +1184,9 @@ def run_game_loop():
                 elif GAME_STATE == 'MENU':
                     if 'story_mode' in active_ui_elements and active_ui_elements['story_mode'].collidepoint(mouse_pos):
                         audio_manager.stop_music()
-                        IntroCutscene(screen, clock).run()  # ← DEĞİŞİKLİK 2: Giriş sahnesi
-                        ai_awakening_scene = AICutscene(screen, clock, asset_paths)
-                        cutscene_finished = ai_awakening_scene.run()
-                        if cutscene_finished:
-                            current_level_idx = 1
-                            start_loading_sequence('PLAYING')
-                        else:
-                            running = False
+                        # Direkt Vasil intro fight — cutscene yok, savaşın içinde konuşma balonları
+                        init_vasil_intro_fight()
+                        GAME_STATE = 'PLAYING'
                     elif 'level_select' in active_ui_elements and active_ui_elements['level_select'].collidepoint(mouse_pos):
                         GAME_STATE = 'LEVEL_SELECT'
                         level_select_page = 0
@@ -1129,6 +1194,7 @@ def run_game_loop():
                         GAME_STATE = 'SETTINGS'
                     elif 'cheat_terminal' in active_ui_elements and active_ui_elements['cheat_terminal'].collidepoint(mouse_pos):
                         GAME_STATE = 'TERMINAL'
+                        terminal_prev_state = 'MENU'
                         terminal_input = ""
                         terminal_status = "KOMUT BEKLENİYOR..."
                     elif 'endless' in active_ui_elements and active_ui_elements['endless'].collidepoint(mouse_pos):
@@ -1270,7 +1336,7 @@ def run_game_loop():
                             current_npc.end_conversation()
                             current_npc = None
                     elif GAME_STATE == 'TERMINAL':
-                        GAME_STATE = 'PLAYING'  # Terminali kapat, oyuna dön
+                        GAME_STATE = terminal_prev_state  # Nereden geldiyse oraya dön
                     elif GAME_STATE in ['MENU', 'SETTINGS', 'LEVEL_SELECT', 'ENDLESS_SELECT']:
                         running = False
 
@@ -1292,12 +1358,42 @@ def run_game_loop():
                         audio_manager.unpause_all()
 
                 if GAME_STATE == 'GAME_OVER' and event.key == pygame.K_r:
-                    # TAM SIFIRLAMA: envanter de temizlenir, silahsız başlanır
-                    inventory_manager.reset()
-                    inventory_weapons.clear()
-                    active_weapon_obj = None
+                    # Ölmeden önceki envanter snapshot'ını kaydet (reset öncesi)
+                    _death_inventory_snapshot = []
+                    for _wt in inventory_manager.unlocked_weapons:
+                        _wslot = inventory_manager.slot_for(_wt)
+                        _wobj  = inventory_manager._weapon_objects.get(_wt)
+                        if _wslot and _wobj:
+                            _death_inventory_snapshot.append((
+                                _wt,
+                                _wobj.__class__,          # sınıf referansı
+                                max(_wobj.bullets, 0),    # mevcut şarjör
+                                max(_wobj.spare_mags, 0), # yedek şarjörler
+                            ))
+                    _death_active_type = inventory_manager.active_type
+
+                    # Oyunu sıfırla (init_game içinde inventory_manager.reset çağrılır)
                     init_game()
                     GAME_STATE = 'PLAYING'
+
+                    # Silahları geri yükle — sandıktan sıfırdan almak gerekmez
+                    for (_wt, _wcls, _wbullets, _wspare) in _death_inventory_snapshot:
+                        _restored = _wcls(spare_mags=_wspare)
+                        _restored.bullets = _wbullets
+                        inventory_manager.unlock(_wt, _restored)
+                        if _wt not in inventory_weapons:
+                            inventory_weapons.append(_wt)
+                    # Önceki aktif silahı tekrar kuşan
+                    if _death_active_type and _death_active_type in inventory_weapons:
+                        inventory_manager.switch_to(_death_active_type)
+                        active_weapon_obj = inventory_manager.active_weapon
+                        if active_weapon_obj:
+                            _rb, _rs = inventory_manager.ammo_state()
+                            active_weapon_obj.bullets    = _rb
+                            active_weapon_obj.spare_mags = _rs
+                            player_bullets = _rb
+                            is_reloading   = False
+                            gun_cooldown   = 0.0
                 if current_level_idx == 99 and event.key == pygame.K_r:
                     init_redemption_mode()
                 if current_level_idx == 99 and event.key == pygame.K_g:
@@ -1341,20 +1437,18 @@ def run_game_loop():
                                             gun_cooldown    = 0.0
                                             karma_notification_text  = f"{_wtype.upper()} ALINDI!"
                                         else:
-                                            # Aynı silah zaten var → +1 yedek şarjör
-                                            # unlocked_weapons bir liste; kayıtlı nesneye
-                                            # switch_to üzerinden erişiyoruz.
-                                            _prev_active_type = inventory_manager.active_type
-                                            inventory_manager.switch_to(_wtype)
-                                            _cur = inventory_manager.active_weapon
-                                            if _cur is not None:
-                                                _cur.add_spare_mag(1)
-                                                if active_weapon_obj and active_weapon_obj.WEAPON_TYPE == _wtype:
-                                                    player_bullets = active_weapon_obj.bullets
-                                            # Önceki aktif silaha geri dön (active_weapon_obj değişmez)
-                                            if _prev_active_type and _prev_active_type != _wtype:
-                                                inventory_manager.switch_to(_prev_active_type)
-                                            karma_notification_text  = f"+1 ŞARJÖR ({_wtype.upper()})"
+                                            # Aynı silah zaten var → chest_add_ammo
+                                            # Slot + weapon_obj atomik güncellenir,
+                                            # mermi bitmişse otomatik doldurulur.
+                                            _ammo_r = inventory_manager.chest_add_ammo(_wtype)
+                                            if active_weapon_obj and active_weapon_obj.WEAPON_TYPE == _wtype:
+                                                player_bullets = _ammo_r['bullets']
+                                                is_reloading   = False
+                                                gun_cooldown   = 0.0
+                                            if _ammo_r['was_empty']:
+                                                karma_notification_text = f"ŞARJÖR + MERMİ! ({_wtype.upper()})"
+                                            else:
+                                                karma_notification_text = f"+1 ŞARJÖR ({_wtype.upper()})"
                                         karma_notification_timer = 60
                                         save_manager.unlock_weapon(_wtype)
                                         all_vfx.add(ParticleExplosion(
@@ -1393,6 +1487,32 @@ def run_game_loop():
                             is_super_mode = not is_super_mode
                             terminal_status = "SÜPER MOD: " + ("AKTİF!" if is_super_mode else "PASİF!")
 
+                        elif _cmd in ("god on", "god_on"):
+                            is_super_mode = True
+                            terminal_status = "OK — GOD MODE AKTİF"
+
+                        elif _cmd in ("god off", "god_off"):
+                            is_super_mode = False
+                            terminal_status = "OK — GOD MODE PASİF"
+
+                        elif _cmd in ("god hp on", "god_hp_on"):
+                            is_god_hp = True
+                            player_hp.current_hp = player_hp.max_hp
+                            terminal_status = "OK — SINIRSIZ CAN AKTİF"
+
+                        elif _cmd in ("god hp off", "god_hp_off"):
+                            is_god_hp = False
+                            terminal_status = "OK — SINIRSIZ CAN PASİF"
+
+                        elif _cmd in ("god stam on", "god_stam_on"):
+                            is_god_stamina = True
+                            player_hp.current_stamina = float(player_hp.max_stamina)
+                            terminal_status = "OK — SINIRSIZ STAMINA AKTİF"
+
+                        elif _cmd in ("god stam off", "god_stam_off"):
+                            is_god_stamina = False
+                            terminal_status = "OK — SINIRSIZ STAMINA PASİF"
+
                         elif _cmd == "debug_arena":
                             current_level_idx = 999
                             start_loading_sequence('PLAYING')
@@ -1404,7 +1524,7 @@ def run_game_loop():
                             _sx = min(int(player_x) + 400, LOGICAL_WIDTH - 60)
 
                             if _cmd in ("help", "yardim"):
-                                terminal_status = "KOMUTLAR: spawn cursed/tank/drone/vasil/ares/nexus/chest/ammo/health | clear enemies/all | god on/off"
+                                terminal_status = "KOMUTLAR: spawn cursed/tank/drone/vasil/ares/nexus/chest/ammo/health | clear enemies/all | god on/off | god hp on/off | god stam on/off"
 
                             elif _cmd == "spawn cursed":
                                 # Gerçek zemin platformunu bul (debug arena'nın tam genişlikte zemini)
@@ -1486,14 +1606,6 @@ def run_game_loop():
                                 all_health_orbs.empty()
                                 terminal_status = f"TEMİZLENDİ — {_ec} düşman + tüm objeler silindi"
 
-                            elif _cmd in ("god on", "god_on"):
-                                is_super_mode = True
-                                terminal_status = "OK — GOD MODE AKTİF (hasar yok, sınırsız stamina)"
-
-                            elif _cmd in ("god off", "god_off"):
-                                is_super_mode = False
-                                terminal_status = "OK — GOD MODE PASİF"
-
                             else:
                                 terminal_status = f"HATA: '{_cmd}' tanımlı değil. 'help' yaz."
 
@@ -1540,6 +1652,7 @@ def run_game_loop():
                     if current_level_idx == 999:
                         # Debug Arena: T → Terminal aç
                         GAME_STATE = 'TERMINAL'
+                        terminal_prev_state = 'PLAYING'
                         terminal_input  = ""
                         terminal_status = "KOMUT BEKLENİYOR... (help yaz)"
                     elif lvl_config.get('type') == 'rest_area':
@@ -1634,13 +1747,10 @@ def run_game_loop():
                                     karma_notification_text  = "ŞARJÖR DOLUYOR..."
                                     karma_notification_timer = 40
                             elif not is_reloading and player_bullets < REVOLVER_MAX_BULLETS:
-                                # Eski uyumluluk
-                                is_reloading  = True
-                                gun_cooldown  = REVOLVER_RELOAD_TIME
-                                if RELOAD_SOUND:
-                                    audio_manager.play_sfx(RELOAD_SOUND)
-                                karma_notification_text  = "ŞARJÖR DOLUYOR..."
-                                karma_notification_timer = 40
+                                # Eski uyumluluk — sadece gerçekten silahsız legacy mod için
+                                # active_weapon_obj varsa buraya düşmemeli (yukarıda yakalanır)
+                                # Silahsız iken R'ya basılırsa hiçbir şey yapma
+                                pass
 
                     # ── 1/2 TUŞLARI: SİLAH DEĞİŞTİR ─────────────────────────────
                     if event.key in (pygame.K_1, pygame.K_2, pygame.K_3) and GAME_STATE == 'PLAYING':
@@ -1748,9 +1858,9 @@ def run_game_loop():
                 npc_show_cursor = not npc_show_cursor
                 npc_cursor_timer = 0
 
-        elif GAME_STATE in ['PLAYING', 'ENDLESS_PLAY', 'TERMINAL']:
+        elif GAME_STATE in ['PLAYING', 'ENDLESS_PLAY']:
             current_karma = player_karma
-            buff_stacks = (current_level_idx - 1) // 3
+            buff_stacks = max(0, (current_level_idx - 1) // 3)
             if buff_stacks > 2:
                 buff_stacks = 2
             base_speed_mult = 1.0 + (0.25 * buff_stacks)
@@ -1829,6 +1939,12 @@ def run_game_loop():
             # Kombo zamanlayıcısı + can yenileme her frame güncellenir
             combo_system.update(dt)
             player_hp.update(dt)
+
+            # ── Hile flagları: sınırsız can / stamina ────────────────────
+            if is_god_hp:
+                player_hp.current_hp = player_hp.max_hp
+            if is_god_stamina:
+                player_hp.current_stamina = float(player_hp.max_stamina)
 
             # ── J/K Melee vuruş tespiti ───────────────────────────────────
             # Hedef havuzu: normal düşmanlar + arena düşmanları (eğer aktifse)
@@ -2000,10 +2116,19 @@ def run_game_loop():
                         all_vfx.add(ParticleExplosion(int(player_x + 15), int(player_y + 15),
                                                       (220, 0, 0), 12))
                         if _died:
-                            GAME_STATE = 'GAME_OVER'
-                            high_score = max(high_score, int(score))
-                            save_manager.update_high_score('easy_mode', current_level_idx, score)
-                            audio_manager.stop_music()
+                            if current_level_idx == 0:
+                                all_enemies.empty()
+                                all_vfx.empty()
+                                VasilDefeatScene(screen, clock).run()
+                                init_limbo()
+                                GAME_STATE = 'PLAYING'
+                                if npcs:
+                                    start_npc_conversation(npcs[0])
+                            else:
+                                GAME_STATE = 'GAME_OVER'
+                                high_score = max(high_score, int(score))
+                                save_manager.update_high_score('easy_mode', current_level_idx, score)
+                                audio_manager.stop_music()
 
                 # Ödül toplama
                 _player_rect_d = pygame.Rect(int(player_x), int(player_y), 30, 30)
@@ -2035,7 +2160,7 @@ def run_game_loop():
                     save_manager.update_high_score('easy_mode', current_level_idx, score)
             # ─────────────────────────────────────────────────────────────
             else:
-                if current_level_idx != 99:
+                if current_level_idx != 99 and current_level_idx != 0:
                     if lvl_config.get('type') not in ('beat_arena', 'debug_arena'):
                         camera_speed = min(MAX_CAMERA_SPEED, camera_speed + SPEED_INCREMENT_RATE * frame_mul)
                     score_gain = 0.1 * max(camera_speed, 1.0) * frame_mul
@@ -2296,57 +2421,110 @@ def run_game_loop():
                     karma_notification_text  = "ŞARJÖR TAMAM!"
                     karma_notification_timer = 30
 
-            # ── Oyuncu mermilerini güncelle ──────────────────────────────────
+            # ── Oyuncu mermilerini güncelle (CCD: eski pos kaydet) ───────────
             for _proj in list(all_player_projectiles):
+                _proj._ccd_ox = _proj.rect.centerx
+                _proj._ccd_oy = _proj.rect.centery
                 _proj.update(camera_speed, dt)
 
-            # ── Mermi → düşman çarpışması ────────────────────────────────────
+            # ── Mermi → düşman çarpışması (CCD + Fat Hitbox) ─────────────────
+            # groupcollide() sadece final rect'i test eder.
+            # Yüksek hızlı / yakın mesafe mermileri düşmandan atlayabilir.
+            # CCD: eski→yeni konum arası 4px adımlarla taranır.
+            # Fat hitbox: BULLET_RADIUS kadar genişletilir.
+            # Shotgun yakın mesafe: ilk frame'de zaten hedef içinde olabilir,
+            # bu yüzden substep 0'dan başlatılır (muzzle noktası da test edilir).
             _lvl_cfg_revolver = EASY_MODE_LEVELS.get(current_level_idx, {})
             if _lvl_cfg_revolver.get('type') != 'manor_stealth':
-                _hit_dict = pygame.sprite.groupcollide(
-                    all_player_projectiles, all_enemies, True, False
-                )
-                for _proj_hit, _enemies_hit in _hit_dict.items():
-                    for _enemy_hit in _enemies_hit:
-                        if hasattr(_enemy_hit, 'take_damage'):
-                            _enemy_hit.take_damage(REVOLVER_DAMAGE)
+
+                _wpn_dmg  = active_weapon_obj.damage if active_weapon_obj else REVOLVER_DAMAGE
+                _bullet_r = getattr(active_weapon_obj, 'BULLET_RADIUS', 6) if active_weapon_obj else 6
+
+                for _proj in list(all_player_projectiles):
+                    if not _proj.alive():
+                        continue
+                    _ox       = getattr(_proj, '_ccd_ox', _proj.rect.centerx)
+                    _oy       = getattr(_proj, '_ccd_oy', _proj.rect.centery)
+                    _nx       = _proj.rect.centerx
+                    _ny       = _proj.rect.centery
+                    _substeps = min(8, max(1, int(math.hypot(_nx-_ox, _ny-_oy) / 4)))
+                    _hit_enemy = None
+                    _hit_cx, _hit_cy = _nx, _ny
+
+                    # range(0, ...) — substep 0 = muzzle noktası da test edilir
+                    # shotgun yakın mesafe için kritik
+                    for _si in range(0, _substeps + 1):
+                        _t  = _si / max(_substeps, 1)
+                        _ix = int(_ox + (_nx - _ox) * _t)
+                        _iy = int(_oy + (_ny - _oy) * _t)
+                        _tr = pygame.Rect(
+                            _ix - _bullet_r, _iy - _bullet_r,
+                            _bullet_r * 2,   _bullet_r * 2
+                        )
+                        for _en in all_enemies:
+                            if isinstance(_en, EnemyBullet):
+                                continue
+                            if _tr.colliderect(_en.rect):
+                                _hit_enemy = _en
+                                _hit_cx, _hit_cy = _ix, _iy
+                                break
+                        if _hit_enemy:
+                            break
+
+                    if _hit_enemy:
+                        if hasattr(_hit_enemy, 'take_damage'):
+                            _hit_enemy.take_damage(_wpn_dmg)
                         score += 300
                         enemies_killed_current_level += 1
-                        save_manager.update_karma(-5)  # Silah kullanımı karma maliyeti
+                        save_manager.update_karma(-5)
                         player_karma = save_manager.get_karma()
-                        karma_notification_text  = f"İSABET! -{REVOLVER_DAMAGE} HP"
+                        karma_notification_text  = f"İSABET! -{_wpn_dmg} HP"
                         karma_notification_timer = 30
-                        all_vfx.add(ParticleExplosion(
-                            _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                            (255, 100, 30), 10
-                        ))
+                        all_vfx.add(ParticleExplosion(_hit_cx, _hit_cy, (255, 100, 30), 10))
                         all_vfx.add(Shockwave(
-                            _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                            (255, 150, 50), max_radius=50, rings=1, speed=10
+                            _hit_cx, _hit_cy, (255, 150, 50), max_radius=50, rings=1, speed=10
                         ))
                         screen_shake = max(screen_shake, 3)
-                        # Ölü düşman temizliği
-                        if hasattr(_enemy_hit, 'is_active') and not _enemy_hit.is_active:
-                            _enemy_hit.kill()
-                            all_vfx.add(ParticleExplosion(
-                                _enemy_hit.rect.centerx, _enemy_hit.rect.centery,
-                                CURSED_PURPLE, 20
-                            ))
+                        if hasattr(_hit_enemy, 'is_active') and not _hit_enemy.is_active:
+                            _hit_enemy.kill()
+                            all_vfx.add(ParticleExplosion(_hit_cx, _hit_cy, CURSED_PURPLE, 20))
+                        _proj.kill()
 
-                # Arena düşmanlarına da mermi isabet
+                # Arena düşmanlarına da mermi isabet (CCD)
                 if lvl_config.get('type') == 'beat_arena':
-                    _arena_hit = pygame.sprite.groupcollide(
-                        all_player_projectiles, beat_arena.arena_enemies, True, False
-                    )
-                    for _ap, _ae_list in _arena_hit.items():
-                        for _ae in _ae_list:
-                            if hasattr(_ae, 'take_damage'):
-                                _ae.take_damage(REVOLVER_DAMAGE)
+                    for _ap in list(all_player_projectiles):
+                        if not _ap.alive():
+                            continue
+                        _ox2 = getattr(_ap, '_ccd_ox', _ap.rect.centerx)
+                        _oy2 = getattr(_ap, '_ccd_oy', _ap.rect.centery)
+                        _nx2 = _ap.rect.centerx
+                        _ny2 = _ap.rect.centery
+                        _ss2 = min(8, max(1, int(math.hypot(_nx2-_ox2, _ny2-_oy2) / 4)))
+                        _ae_hit = None
+                        _ae_cx, _ae_cy = _nx2, _ny2
+
+                        for _si2 in range(0, _ss2 + 1):
+                            _t2  = _si2 / max(_ss2, 1)
+                            _ix2 = int(_ox2 + (_nx2-_ox2) * _t2)
+                            _iy2 = int(_oy2 + (_ny2-_oy2) * _t2)
+                            _r2  = pygame.Rect(
+                                _ix2-_bullet_r, _iy2-_bullet_r,
+                                _bullet_r*2,    _bullet_r*2
+                            )
+                            for _ae in beat_arena.arena_enemies:
+                                if _r2.colliderect(_ae.rect):
+                                    _ae_hit = _ae
+                                    _ae_cx, _ae_cy = _ix2, _iy2
+                                    break
+                            if _ae_hit:
+                                break
+
+                        if _ae_hit:
+                            if hasattr(_ae_hit, 'take_damage'):
+                                _ae_hit.take_damage(_wpn_dmg)
                             score += 300
-                            all_vfx.add(ParticleExplosion(
-                                _ae.rect.centerx, _ae.rect.centery,
-                                (255, 100, 30), 10
-                            ))
+                            all_vfx.add(ParticleExplosion(_ae_cx, _ae_cy, (255, 100, 30), 10))
+                            _ap.kill()
 
             PLAYER_W, PLAYER_H = 28, 42   # sprite boyutuyla eşleşir
             player_rect = pygame.Rect(int(player_x), int(player_y), PLAYER_W, PLAYER_H)
@@ -2712,8 +2890,21 @@ def run_game_loop():
                             elif finisher_state_timer > 5.0:
                                 boss_target.health = 0
 
-            if current_level_idx in [10, 30]:
-                boss_manager_system.update_logic(current_level_idx, all_platforms, player_x, player_karma, camera_speed, frame_mul, is_weakened=False)
+            if current_level_idx in [0, 10, 30]:
+                _bm_idx = current_level_idx if current_level_idx != 0 else 10  # Level 0 → level 10 saldırı seti
+                boss_manager_system.update_logic(_bm_idx, all_platforms, player_x, player_karma, camera_speed, frame_mul, is_weakened=False)
+
+                # ── LEVEL 0 / INTRO: Boss player'ı smooth lerp ile takip eder ──
+                if current_level_idx == 0:
+                    _intro_boss = next((e for e in all_enemies if isinstance(e, VasilBoss)), None)
+                    if _intro_boss:
+                        _ib_target_x = player_x + 380
+                        _ib_speed    = 3.0 * frame_mul
+                        if _intro_boss.x < _ib_target_x:
+                            _intro_boss.x = min(_intro_boss.x + _ib_speed, _ib_target_x)
+                        elif _intro_boss.x > _ib_target_x:
+                            _intro_boss.x = max(_intro_boss.x - _ib_speed, _ib_target_x)
+                        _intro_boss.rect.x = int(_intro_boss.x)
                 player_hitbox = pygame.Rect(player_x + 5, player_y + 5, 20, 20)
                 player_obj_data = {'x': player_x, 'y': player_y}
                 is_hit = boss_manager_system.check_collisions(player_hitbox, player_obj_data, all_vfx, save_manager)
@@ -2723,28 +2914,45 @@ def run_game_loop():
                     all_vfx.add(ParticleExplosion(player_x + 15, player_y + 15, (200, 0, 0), 25))
                     player_x -= 40
                     y_velocity = -10
-                    current_k = save_manager.get_karma()
-                    damage = 75
-                    if current_k > 0:
-                        save_manager.update_karma(-damage)
-                    elif current_k < 0:
-                        save_manager.update_karma(damage)
-                    new_k = save_manager.get_karma()
-                    if abs(new_k) < 50:
-                        save_manager.data["karma"] = 0
-                        save_manager.save_data()
-                        if current_level_idx == 10:
+
+                    if current_level_idx == 0:
+                        # ── Level 0: Hasar doğrudan cana gider ──────────
+                        _died = player_hp.take_damage(35)
+                        karma_notification_text  = f"HASAR ALDIN! ({player_hp.current_hp}/{player_hp.max_hp})"
+                        karma_notification_timer = 40
+                        if _died:
+                            # Vasil yenilemez → ölünce defeat sahnesine geç
+                            all_enemies.empty()
+                            all_vfx.empty()
+                            VasilDefeatScene(screen, clock).run()
                             init_limbo()
                             GAME_STATE = 'PLAYING'
                             if npcs:
                                 start_npc_conversation(npcs[0])
-                        else:
-                            GAME_STATE = 'GAME_OVER'
-                            save_manager.update_high_score('easy_mode', current_level_idx, score)
-                            audio_manager.stop_music()
                     else:
-                        karma_notification_text = "İRADE HASAR ALDI!"
-                        karma_notification_timer = 40
+                        # ── Level 10/30: Eski karma hasar sistemi ───────
+                        current_k = save_manager.get_karma()
+                        damage = 75
+                        if current_k > 0:
+                            save_manager.update_karma(-damage)
+                        elif current_k < 0:
+                            save_manager.update_karma(damage)
+                        new_k = save_manager.get_karma()
+                        if abs(new_k) < 50:
+                            save_manager.data["karma"] = 0
+                            save_manager.save_data()
+                            if current_level_idx == 10:
+                                init_limbo()
+                                GAME_STATE = 'PLAYING'
+                                if npcs:
+                                    start_npc_conversation(npcs[0])
+                            else:
+                                GAME_STATE = 'GAME_OVER'
+                                save_manager.update_high_score('easy_mode', current_level_idx, score)
+                                audio_manager.stop_music()
+                        else:
+                            karma_notification_text  = "İRADE HASAR ALDI!"
+                            karma_notification_timer = 40
 
             lvl_config = EASY_MODE_LEVELS.get(current_level_idx, {})
             if lvl_config.get('type') == 'scrolling_boss' or current_level_idx == 30:
@@ -2782,6 +2990,22 @@ def run_game_loop():
                         all_enemies.add(projectile)
                 enemy.spawn_queue = []
 
+            # ── INTRO BOSS (Level 0) — Vasil yenilemez, kill_player sinyalini yakala ─
+            if current_level_idx == 0:
+                for _ib_e in list(all_enemies):
+                    if isinstance(_ib_e, VasilBoss) and getattr(_ib_e, 'kill_player', False):
+                        vasil_intro_kill_pending = True
+                        break
+                if vasil_intro_kill_pending:
+                    vasil_intro_kill_pending = False
+                    all_enemies.empty()
+                    all_vfx.empty()
+                    VasilDefeatScene(screen, clock).run()
+                    init_limbo()
+                    GAME_STATE = 'PLAYING'
+                    if npcs:
+                        start_npc_conversation(npcs[0])
+
             if lvl_config.get('type') == 'boss_fight' or current_level_idx == 30:
                 boss_alive = False
                 boss_obj = None
@@ -2814,13 +3038,21 @@ def run_game_loop():
                 if trail.life <= 0:
                     trail_effects.remove(trail)
 
-            if lvl_config.get('type') not in ('rest_area', 'beat_arena', 'debug_arena') and current_level_idx != 99:
+            if lvl_config.get('type') not in ('rest_area', 'beat_arena', 'debug_arena') and current_level_idx not in (0, 99):
                 if current_level_idx <= 30:
                     if len(all_platforms) > 0 and max(p.rect.right for p in all_platforms) < LOGICAL_WIDTH + 100:
                         add_new_platform()
 
             if player_y > LOGICAL_HEIGHT + 100:
-                if current_level_idx == 10:
+                if current_level_idx == 0:
+                    all_enemies.empty()
+                    all_vfx.empty()
+                    VasilDefeatScene(screen, clock).run()
+                    init_limbo()
+                    GAME_STATE = 'PLAYING'
+                    if npcs:
+                        start_npc_conversation(npcs[0])
+                elif current_level_idx == 10:
                     init_limbo()
                     GAME_STATE = 'PLAYING'
                     if npcs:
@@ -3011,6 +3243,14 @@ def run_game_loop():
                 current_k = save_manager.get_karma()
                 draw_background_boss_silhouette(game_canvas, current_k, LOGICAL_WIDTH, LOGICAL_HEIGHT)
 
+            # ── 4b. Vasil intro arena arka plan (Level 0) ────────────────
+            if current_level_idx == 0:
+                _vasil_boss_ref = next(
+                    (e for e in all_enemies if isinstance(e, VasilBoss)), None
+                )
+                _arena_timer = getattr(_vasil_boss_ref, '_fight_timer', 0.0) if _vasil_boss_ref else 0.0
+                draw_vasil_arena_bg(game_canvas, _arena_timer, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+
             # ── VFX yüzeyini sıfırla (henüz game_canvas'a bitmeyecek) ───
             vfx_surface.fill((0, 0, 0, 0))
 
@@ -3072,8 +3312,11 @@ def run_game_loop():
                 trail.draw(vfx_surface)
 
             # ── Oyuncu mermilerini çiz (VFX yüzeyi üstünde) ──────────────
+            _bullet_wtype = 'default'
+            if active_weapon_obj is not None:
+                _bullet_wtype = getattr(active_weapon_obj, 'WEAPON_TYPE', 'default')
             for _p in all_player_projectiles:
-                _p.draw(game_canvas)
+                draw_player_bullet(game_canvas, _p, _bullet_wtype)
 
             # ── 7. NPC'ler ───────────────────────────────────────────────
             for npc in npcs:
@@ -3486,6 +3729,67 @@ def run_game_loop():
                     game_canvas.blit(_pf.render(f"{int(_sp_pct * 100):3d}%", True,
                                                 (int(50+205*_sp_pct), int(230-180*_sp_pct), 20)),
                                      (_bar_x + 68, _bar_y + 10))
+
+            # ── 8c. TRAJECTORY IZGARA — Mermi yolu göstergesi ───────────────
+            # DEBUG_SPRITE'dan bağımsız, her zaman gösterilir.
+            # Rule 3: _traj_surface pre-allocated, her frame sadece fill+draw.
+            if (GAME_STATE in ('PLAYING', 'ENDLESS_PLAY')
+                    and active_weapon_obj is not None
+                    and not active_weapon_obj.is_reloading
+                    and active_weapon_obj.bullets > 0):
+
+                _traj_surface.fill((0, 0, 0, 0))
+
+                _tr_px = int(player_x) + render_offset[0] + int(-manor_camera_offset_x) + 14
+                _tr_py = int(player_y) + render_offset[1] + int(-manor_camera_offset_y) + 22
+
+                _tr_wtype = getattr(active_weapon_obj, 'WEAPON_TYPE', 'revolver')
+                if _tr_wtype == 'revolver':
+                    _tr_rgb = (255, 200, 50)
+                elif _tr_wtype == 'smg':
+                    _tr_rgb = (80, 210, 255)
+                elif _tr_wtype == 'shotgun':
+                    _tr_rgb = (255, 130, 40)
+                else:
+                    _tr_rgb = (200, 200, 200)
+
+                _tgp      = active_weapon_obj.get_trajectory_grid_points(
+                    _tr_px, _tr_py, aim_angle, step_px=45, total_px=315
+                )
+                _tg_steps  = len(_tgp['center'])
+                _tg_spread = _tgp['spread']
+
+                if _tg_steps >= 2:
+                    pygame.draw.line(_traj_surface, (*_tr_rgb, 30),
+                                     _tgp['center'][0], _tgp['center'][-1], 1)
+
+                for _tgi in range(1, _tg_steps):
+                    _tg_alpha = int(160 * (1.0 - (_tgi / _tg_steps)))
+                    pygame.draw.circle(_traj_surface, (*_tr_rgb, _tg_alpha),
+                                       _tgp['center'][_tgi], 2)
+                    if _tg_spread > 0.001:
+                        _tu = _tgp['upper'][_tgi]
+                        _tl = _tgp['lower'][_tgi]
+                        _ra = max(25, _tg_alpha // 3)
+                        pygame.draw.circle(_traj_surface,
+                                           (*_tr_rgb, max(40, _tg_alpha-30)), _tu, 2)
+                        pygame.draw.circle(_traj_surface,
+                                           (*_tr_rgb, max(40, _tg_alpha-30)), _tl, 2)
+                        if _tgi - 1 < len(_tgp['rungs']):
+                            pygame.draw.line(_traj_surface, (*_tr_rgb, _ra),
+                                             _tgp['rungs'][_tgi-1][0],
+                                             _tgp['rungs'][_tgi-1][1], 1)
+
+                if _tg_spread > 0.001 and len(_tgp['upper']) >= 2:
+                    for _tgi2 in range(1, _tg_steps, 2):
+                        _ta2 = max(20, int(80 * (1.0 - (_tgi2 / _tg_steps))))
+                        if _tgi2 < len(_tgp['upper']):
+                            pygame.draw.line(_traj_surface, (*_tr_rgb, _ta2),
+                                             _tgp['upper'][_tgi2-1], _tgp['upper'][_tgi2], 1)
+                            pygame.draw.line(_traj_surface, (*_tr_rgb, _ta2),
+                                             _tgp['lower'][_tgi2-1], _tgp['lower'][_tgi2], 1)
+
+                game_canvas.blit(_traj_surface, (0, 0))
 
             # ── 9. Yardımcı figür ────────────────────────────────────────
             if vasil_companion:

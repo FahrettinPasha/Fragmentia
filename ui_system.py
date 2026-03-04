@@ -620,7 +620,7 @@ def draw_weapon_hud(surface, active_weapon: str, bullets: int, mag_size: int,
     Aktif silah türüne göre revolver haznesi veya SMG şerit göstergesi seçilir.
     """
     if active_weapon == "revolver":
-        draw_revolver_hud(surface, bullets, gun_cooldown, is_reloading)
+        draw_revolver_hud(surface, bullets, gun_cooldown, is_reloading, spare_mags)
     elif active_weapon == "shotgun":
         draw_shotgun_hud(surface, bullets, mag_size, spare_mags, gun_cooldown, is_reloading)
     else:
@@ -828,7 +828,8 @@ def draw_weapon_switch_ui(surface, active_weapon: str, inventory: list):
                                    iy + ICON_SIZE + 2))
 
 
-def draw_revolver_hud(surface, bullets: int, gun_cooldown: float, is_reloading: bool):
+def draw_revolver_hud(surface, bullets: int, gun_cooldown: float, is_reloading: bool,
+                      spare_mags: int = 0):
     """
     Ekranın sağ alt köşesine altıpatar mermi hazne göstergesi çizer.
 
@@ -916,6 +917,13 @@ def draw_revolver_hud(surface, bullets: int, gun_cooldown: float, is_reloading: 
     cnt_font = pygame.font.Font(None, 28)
     cnt_surf = cnt_font.render(f"{bullets}/{REVOLVER_MAX_BULLETS}", True, (240, 230, 180))
     surface.blit(cnt_surf, (PANEL_X + 8, PANEL_Y + PANEL_H - 28))
+
+    # ── Yedek mermi satırı ───────────────────────────────────────────────
+    spare_font = pygame.font.Font(None, 22)
+    spare_col  = (200, 160, 40) if spare_mags > 0 else (120, 100, 60)
+    spare_txt  = f"YEDEK: {spare_mags}" if spare_mags < 9990 else "YEDEK: ∞"
+    spare_surf = spare_font.render(spare_txt, True, spare_col)
+    surface.blit(spare_surf, (PANEL_X + 8, PANEL_Y + PANEL_H - 46))
 
     # ── Dolum veya bekleme çubuğu ────────────────────────────────────────
     BAR_X = PANEL_X + 8
